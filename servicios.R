@@ -16,7 +16,7 @@ drv <- dbDriver("PostgreSQL")
 con <- dbConnect(
   drv,
   dbname = "sube",
-  host = "10.78.10.215",
+  host = "10.78.14.54",
   port = 5432,
   user = "postgres",
   password = pw
