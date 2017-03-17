@@ -1,0 +1,182 @@
+---
+title: "Centro de Transbordo"
+author: "SSTYT"
+date: "16/3/2017"
+output: html_document
+---
+```{r param, include=FALSE}
+#Nombre de la tabla del shape del CTB
+shp <- "informacion_geografica.caba"
+
+#Nombre de la tabla de movimientos y gps
+gps_mov <- "gps_mov.a2016_05_4"
+
+#Nombre de la geom del shape
+geom_shp <- "geom"
+#Nombre de la geom de la tabla de movimientos y gps
+geom_gps_mov <- "geom_ant"
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(RPostgreSQL)
+library("knitr")
+library("dplyr")
+library("ggplot2")
+```
+
+```{r postgres conn, include=FALSE}
+pw <- {
+  "postgres"
+}
+
+# loads the PostgreSQL driver
+drv <- dbDriver("PostgreSQL")
+# creates a connection to the postgres database
+# note that "con" will be used later in each connection to the database
+con <- dbConnect(
+  drv,
+  dbname = "sube",
+  host = "10.78.10.215",
+  port = 5432,
+  user = "postgres",
+  password = pw
+)
+
+```
+
+```{r queries_string, include=FALSE}
+
+# Cantidad de transacciones, cantidad de transacciones en subte, en colectivo y tren
+query1 <- paste("SELECT COUNT(1) AS trx_total,
+SUM(CASE WHEN modo = 'TREN' THEN 1 ELSE 0 END) AS trx_tren,
+SUM(CASE WHEN modo = 'SUBTE' THEN 1 ELSE 0 END) AS trx_subte,
+SUM(CASE WHEN modo = 'BUS' THEN 1 ELSE 0 END) AS trx_bus
+FROM ", gps_mov," a, ", shp, " b
+WHERE 
+a.geom_ant && b.geom
+AND
+ST_DISTANCE(a.geom_ant,b.geom) = 0;", sep = '')
+
+# Cantidad de transbordos, cantidad de transbordos en subte, en colectivo y en tren
+query2 <- paste("SELECT COUNT(1) AS tb_total,
+SUM(CASE WHEN modo = 'TREN' THEN 1 ELSE 0 END) AS tb_tren,
+SUM(CASE WHEN modo = 'SUBTE' THEN 1 ELSE 0 END) AS tb_subte,
+SUM(CASE WHEN modo = 'BUS' THEN 1 ELSE 0 END) AS tb_bus
+FROM ", gps_mov," a, ", shp, " b
+WHERE 
+etapa_viaje > 1 
+AND 
+a.geom && b.geom
+AND
+ST_DISTANCE(a.geom,b.geom) = 0;", sep = '')
+
+# TRX por hora
+query3 <- paste("SELECT COUNT(1) AS trx_total,
+SUM(CASE WHEN modo = 'TREN' THEN 1 ELSE 0 END) AS trx_tren,
+SUM(CASE WHEN modo = 'SUBTE' THEN 1 ELSE 0 END) AS trx_subte,
+SUM(CASE WHEN modo = 'BUS' THEN 1 ELSE 0 END) AS trx_bus, h as hora
+FROM ", gps_mov," a, ", shp, " b
+WHERE 
+a.geom && b.geom
+AND
+ST_DISTANCE(a.geom,b.geom) = 0
+group by h;", sep = '')
+
+# TB por hora
+query4 <- paste("SELECT COUNT(1) AS trx_total,
+SUM(CASE WHEN modo = 'TREN' THEN 1 ELSE 0 END) AS trx_tren,
+SUM(CASE WHEN modo = 'SUBTE' THEN 1 ELSE 0 END) AS trx_subte,
+SUM(CASE WHEN modo = 'BUS' THEN 1 ELSE 0 END) AS trx_bus, h as hora
+FROM ", gps_mov," a, ", shp, " b
+WHERE
+etapa_viaje > 1
+AND 
+a.geom && b.geom
+AND
+ST_DISTANCE(a.geom,b.geom) = 0
+GROUP BY h;
+", sep = '')
+
+# TRX por linea
+query5 <- paste("SELECT COUNT(1) AS trx_total, desc_linea
+FROM ", gps_mov," a, ", shp, " b
+WHERE
+modo = 'BUS'
+AND 
+a.geom && b.geom
+AND
+ST_DISTANCE(a.geom,b.geom) = 0
+GROUP BY desc_linea;", sep = '')
+
+# TRX por hora, bus
+query6 <- paste("SELECT COUNT(1) AS trx_total, date_part('h', fecha_trx) as hora
+FROM ", gps_mov," a, ", shp, " b
+WHERE
+modo = 'BUS'
+AND 
+a.geom && b.geom
+AND
+ST_DISTANCE(a.geom,b.geom) = 0
+GROUP BY date_part('h', fecha_trx);", sep = '')
+
+# TRX por hora, tren
+query7 <- paste("SELECT COUNT(1) AS trx_total, date_part('h', fecha_trx) as hora
+FROM ", gps_mov," a, ", shp, " b
+WHERE
+modo = 'TREN'
+AND 
+a.geom && b.geom
+AND
+ST_DISTANCE(a.geom,b.geom) = 0
+GROUP BY date_part('h', fecha_trx);", sep = '')
+
+# TRX por hora, subte
+query8 <- paste("SELECT COUNT(1) AS trx_total, date_part('h', fecha_trx) as hora
+FROM ", gps_mov," a, ", shp, " b
+WHERE
+modo = 'SUBTE'
+AND 
+a.geom && b.geom
+AND
+ST_DISTANCE(a.geom,b.geom) = 0
+GROUP BY date_part('h', fecha_trx);", sep = '')
+
+# velocidad por hora
+query9 <- paste("SELECT AVG(a.velocity_anterior) AS velocidad, date_part('h', fecha_trx) as hora
+FROM ", gps_mov," a, ", shp, " b
+WHERE
+modo = 'BUS'
+AND 
+a.geom && b.geom
+AND
+ST_DISTANCE(a.geom,b.geom) = 0
+GROUP BY date_part('h', fecha_trx);", sep = '')
+
+```
+
+```{r queries_ejecucion, include=FALSE}
+q1 <- dbGetQuery(con, query1)
+#q2 <- dbGetQuery(con, query2)
+#q3 <- dbGetQuery(con, query3)
+#q4 <- dbGetQuery(con, query4)
+
+```
+## R Markdown
+```{r tablas, echo= FALSE}
+#q1
+kable(q1, col.names = c("trx_total", "trx_tren", "trx_subte", "trx_bus"), align = 'clclr')
+
+
+```
+
+
+## Gráficos
+```{r graficos, echo= FALSE}
+#q1
+
+
+```
+
+
