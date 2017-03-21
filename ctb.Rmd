@@ -13,8 +13,15 @@ gps_mov <- "gps_mov.a2016_05_4"
 
 #Nombre de la geom del shape
 geom_shp <- "geom"
+
 #Nombre de la geom de la tabla de movimientos y gps
 geom_gps_mov <- "geom_ant"
+
+#Día inicio del analisis
+dia_init <- 9
+
+#Dia final del análisis
+dia_fin <- 11
 
 ```
 
@@ -24,6 +31,7 @@ library(RPostgreSQL)
 library("knitr")
 library("dplyr")
 library("ggplot2")
+library("sqldf")
 ```
 
 ```{r postgres conn, include=FALSE}
@@ -44,6 +52,12 @@ con <- dbConnect(
   password = pw
 )
 
+```
+
+```{r extraccion, include= FALSE}
+base <- sqldf(paste("SELECT nro_tarjeta, codigo_contrato, saldo, categoria, modo, desc_linea, interno ,nro_viaje, etapa_viaje, d, h, velocity_anterior, velocity_siguiente, a.geom_ant FROM", gps_mov," a,", shp, "b",
+                     "WHERE a.d BETWEEN", dia_init, "AND", dia_fin,
+                     "AND diferencia_tiempo_anterior <= 10 OR diferencia_tiempo_siguiente <= 10 AND a.geom_ant && b.geom AND ST_DISTANCE(a.geom_ant,b.geom) = 0;"), drv = "PostgreSQL")
 ```
 
 ```{r queries_string, include=FALSE}
