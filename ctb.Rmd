@@ -17,6 +17,12 @@ geom_shp <- "geom"
 #Nombre de la geom de la tabla de movimientos y gps
 geom_gps_mov <- "geom_ant"
 
+#Metros del buffer
+buffer <- 50
+
+#Nombre de la geom del shape con buffer
+geom_buffer <- paste("geom_buffer_", buffer, sep = '')
+
 #Día inicio del analisis
 dia_init <- 4
 
@@ -57,6 +63,18 @@ options(sqldf.RPostgreSQL.user = "postgres",
         sqldf.RPostgreSQL.dbname = "sube",
         sqldf.RPostgreSQL.host = "10.78.10.215",
         sqldf.RPostgreSQL.port = 5432)
+
+
+```
+
+```{r shape setup, include= FALSE}
+#Sólo usar si hay que crear un buffer y un índice geográfico en el buffer
+
+sqldf(paste("alter table ", shp, " add column ",  geom_buffer, " public.geometry ;", sep = ''   ), drv = "PostgreSQL")
+
+sqldf(paste("update ", shp, " set ",  geom_buffer, " = st_buffer(", geom_shp, "::geography, ", buffer, " )::geometry ;", sep = ''   ), drv = "PostgreSQL", sep = '')
+
+sqldf(paste("CREATE INDEX idx_", shp, "_", geom_buffer, " ON ", shp, " USING gist (", geom_buffer, ")", sep = ''   ), drv = "PostgreSQL", sep = '')
 ```
 
 ```{r extraccion, include= FALSE}
@@ -103,6 +121,7 @@ q9 <- summarise(group_by(filter(base, base$modo == "BUS"), h), mean(velocity_ant
 #q4 <- dbGetQuery(con, query4)
 
 ```
+
 ## R Markdown
 ```{r tablas, echo= FALSE}
 #q1
@@ -110,7 +129,6 @@ kable(q1, col.names = c("Modo", "Transacciones"), align = 'lc')
 
 
 ```
-
 
 ## Gráficos
 ```{r graficos, echo= FALSE}
