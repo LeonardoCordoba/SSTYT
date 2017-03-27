@@ -68,127 +68,30 @@ base <- sqldf(paste("SELECT nro_tarjeta, codigo_contrato, saldo, categoria, modo
 ```{r queries_string, include=FALSE}
 
 # Cantidad de transacciones, cantidad de transacciones en subte, en colectivo y tren
-# query1 <- paste("SELECT COUNT(1) AS trx_total,
-# SUM(CASE WHEN modo = 'TREN' THEN 1 ELSE 0 END) AS trx_tren,
-# SUM(CASE WHEN modo = 'SUBTE' THEN 1 ELSE 0 END) AS trx_subte,
-# SUM(CASE WHEN modo = 'BUS' THEN 1 ELSE 0 END) AS trx_bus
-# FROM ", gps_mov," a, ", shp, " b
-# WHERE 
-# a.geom_ant && b.geom
-# AND
-# ST_DISTANCE(a.geom_ant,b.geom) = 0;", sep = '')
-
-q1 <- count(base, modo) 
+q1 <- count(base, modo)
   
 # Cantidad de transbordos, cantidad de transbordos en subte, en colectivo y en tren
-# query2 <- paste("SELECT COUNT(1) AS tb_total,
-# SUM(CASE WHEN modo = 'TREN' THEN 1 ELSE 0 END) AS tb_tren,
-# SUM(CASE WHEN modo = 'SUBTE' THEN 1 ELSE 0 END) AS tb_subte,
-# SUM(CASE WHEN modo = 'BUS' THEN 1 ELSE 0 END) AS tb_bus
-# FROM ", gps_mov," a, ", shp, " b
-# WHERE 
-# etapa_viaje > 1 
-# AND 
-# a.geom && b.geom
-# AND
-# ST_DISTANCE(a.geom,b.geom) = 0;", sep = '')
-
 q2 <- filter(base, base$etapa_viaje > 1) %>% count(., modo)
 
 # TRX por hora
-# query3 <- paste("SELECT COUNT(1) AS trx_total,
-# SUM(CASE WHEN modo = 'TREN' THEN 1 ELSE 0 END) AS trx_tren,
-# SUM(CASE WHEN modo = 'SUBTE' THEN 1 ELSE 0 END) AS trx_subte,
-# SUM(CASE WHEN modo = 'BUS' THEN 1 ELSE 0 END) AS trx_bus, h as hora
-# FROM ", gps_mov," a, ", shp, " b
-# WHERE 
-# a.geom && b.geom
-# AND
-# ST_DISTANCE(a.geom,b.geom) = 0
-# group by h;", sep = '')
-
 q3 <- count(base, modo, h) 
   
 # TB por hora
-# query4 <- paste("SELECT COUNT(1) AS trx_total,
-# SUM(CASE WHEN modo = 'TREN' THEN 1 ELSE 0 END) AS trx_tren,
-# SUM(CASE WHEN modo = 'SUBTE' THEN 1 ELSE 0 END) AS trx_subte,
-# SUM(CASE WHEN modo = 'BUS' THEN 1 ELSE 0 END) AS trx_bus, h as hora
-# FROM ", gps_mov," a, ", shp, " b
-# WHERE
-# etapa_viaje > 1
-# AND 
-# a.geom && b.geom
-# AND
-# ST_DISTANCE(a.geom,b.geom) = 0
-# GROUP BY h;
-# ", sep = '')
-
 q4 <- filter(base, base$etapa_viaje > 1) %>% count(., modo, h) 
   
 # TRX por linea
-# query5 <- paste("SELECT COUNT(1) AS trx_total, desc_linea
-# FROM ", gps_mov," a, ", shp, " b
-# WHERE
-# modo = 'BUS'
-# AND 
-# a.geom && b.geom
-# AND
-# ST_DISTANCE(a.geom,b.geom) = 0
-# GROUP BY desc_linea;", sep = '')
-
 q5 <- count(filter(base, base$modo == "BUS"), desc_linea)
 
 # TRX por hora, bus
-# query6 <- paste("SELECT COUNT(1) AS trx_total, date_part('h', fecha_trx) as hora
-# FROM ", gps_mov," a, ", shp, " b
-# WHERE
-# modo = 'BUS'
-# AND 
-# a.geom && b.geom
-# AND
-# ST_DISTANCE(a.geom,b.geom) = 0
-# GROUP BY date_part('h', fecha_trx);", sep = '')
-
 q6 <- count(filter(base, base$modo == "BUS"), h)
 
 # TRX por hora, tren
-# query7 <- paste("SELECT COUNT(1) AS trx_total, date_part('h', fecha_trx) as hora
-# FROM ", gps_mov," a, ", shp, " b
-# WHERE
-# modo = 'TREN'
-# AND 
-# a.geom && b.geom
-# AND
-# ST_DISTANCE(a.geom,b.geom) = 0
-# GROUP BY date_part('h', fecha_trx);", sep = '')
-
 q7 <- count(filter(base, base$modo == "TREN"), h)
 
 # TRX por hora, subte
-# query8 <- paste("SELECT COUNT(1) AS trx_total, date_part('h', fecha_trx) as hora
-# FROM ", gps_mov," a, ", shp, " b
-# WHERE
-# modo = 'SUBTE'
-# AND 
-# a.geom && b.geom
-# AND
-# ST_DISTANCE(a.geom,b.geom) = 0
-# GROUP BY date_part('h', fecha_trx);", sep = '')
-
 q8 <- count(filter(base, base$modo == "SUBTE"), h)
 
 # velocidad por hora
-# query9 <- paste("SELECT AVG(a.velocity_anterior) AS velocidad, date_part('h', fecha_trx) as hora
-# FROM ", gps_mov," a, ", shp, " b
-# WHERE
-# modo = 'BUS'
-# AND 
-# a.geom && b.geom
-# AND
-# ST_DISTANCE(a.geom,b.geom) = 0
-# GROUP BY date_part('h', fecha_trx);", sep = '')
-
 q9 <- summarise(group_by(filter(base, base$modo == "BUS"), h), mean(velocity_anterior))
 
 ```
