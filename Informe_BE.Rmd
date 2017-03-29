@@ -1,0 +1,163 @@
+---
+title: "Informe de Seguimiento BE"
+author: "SSTYTRA"
+date:
+output: pdf_document
+graphics: yes
+header-includes:
+- \usepackage{booktabs}
+---
+
+```{r global_options, R.options=knitr::opts_chunk$set(warning=FALSE, message=FALSE)}
+```
+
+```{r setup, include=FALSE}
+library("RODBC")
+library("sqldf")
+library("dplyr")
+library("knitr")
+library("xtable")
+library("ggplot2")
+library("cowplot")
+
+#Conexión al server
+options(sqldf.RPostgreSQL.user ="postgres",
+        sqldf.RPostgreSQL.password ="123456",
+        sqldf.RPostgreSQL.dbname ="sube",
+        sqldf.RPostgreSQL.host = "10.78.14.54",
+        sqldf.RPostgreSQL.port =5432)
+
+```
+```{r extraccion, include=FALSE}
+# Genero la variables de mes y año para el informe
+y <- as.numeric(format(Sys.Date(), "%Y"))
+# m <- as.numeric(strftime(as.Date(format(Sys.Date(), "%Y-%m-01")) -1, "%m"))
+m <- as.numeric(strftime(as.Date(format(Sys.Date(), "%Y-%m-01")), "%m"))
+M <- format(Sys.Date()-30, "%B")
+
+# Tomo los datos del mes correspondiente de la base de datos de NSSA
+consulta_nssa <- paste("SELECT * FROM boleto_estudiantil.liquidacion_be_03test WHERE mes_liqui =", m, "AND ano_liqui =", y)
+reporte_be_nssa <- sqldf(consulta_nssa, drv = "PostgreSQL")
+
+# Tomo los datos de empresa_linea_ramal actualizados
+elr <- sqldf("SELECT * FROM tablas_complementarias.empresa_linea_ramal", drv = "PostgreSQL")
+
+length(unique(reporte_be_nssa$id_linea)) ==  length(unique(elr[elr$id_linea %in% reporte_be_nssa$id_linea,"id_linea"]))
+
+# Genero la tabla reporte enriquecida con los datos de empresa_linea_ramal
+
+reporte_be <- left_join(x = reporte_be_nssa, y = elr, by = "id_linea")
+
+# Genero las tablas base de trabajo: 1 agrupa por empresa, contrato y linea y 2 agrupa por empresa y linea
+
+reporte_be_sum1 <- group_by(reporte_be, id_empresa, desc_empresa, contrato, id_linea, desc_linea) %>% summarise(.,sum(cantidad_usos),sum(total_descuento))
+
+reporte_be_sum2 <- group_by(reporte_be, id_empresa, desc_empresa, id_linea, desc_linea) %>% summarise(.,sum(cantidad_usos),sum(total_descuento))
+
+# Genero las tablas de usos por modos
+
+usos_bus <-filter(reporte_be_sum2[order(reporte_be_sum2$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa != 1)[,c("desc_linea", "sum(cantidad_usos)")]
+
+usos_subte <- filter(reporte_be_sum2[order(reporte_be_sum2$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa == 1)[,c("desc_linea","sum(cantidad_usos)")]
+
+# Genero las tablas de usos por nivel educativo
+
+usos_primaria <-filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], contrato == 830)[,c("desc_linea", "sum(cantidad_usos)")]
+
+usos_secundaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], contrato == 831)[,c("desc_linea", "sum(cantidad_usos)")]
+
+# Genero las tablas por modo y nivel educativo
+
+usos_bus_primaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa != 1 & contrato == 830 )[,c("desc_linea", "sum(cantidad_usos)")]
+
+usos_bus_secundaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa != 1 & contrato == 831 )[,c("desc_linea", "sum(cantidad_usos)")]
+
+usos_subte_primaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa == 1 & contrato == 830)[,c("desc_linea","sum(cantidad_usos)")]
+
+usos_subte_secundaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa == 1 & contrato == 831)[,c("desc_linea","sum(cantidad_usos)")]
+
+# Calculo los usos totales en general y por nivel educativo
+
+total_usos <- sum(reporte_be_sum1$`sum(cantidad_usos)`)
+total_primaria <- sum(usos_primaria$`sum(cantidad_usos)`) 
+total_secundaria <- sum(usos_secundaria$`sum(cantidad_usos)`)
+
+# Genero las tablas de 10 lineas más usadas de colectivos y los usos por línea de subte
+
+top_usos_bus <- kable(head(usos_bus, n= 10), format = "latex", booktabs = TRUE, col.names = c("Línea", "Usos"), align = 'lc')
+
+top_usos_subte <- kable(usos_subte, format = "latex", booktabs = TRUE, col.names = c("Línea", "Usos"), align = 'lc')
+
+# Genero los gráficos de las 10 líneas más usadas de colectivos y los usos por línea de subte
+
+gtop_bus <- ggplot(data = head(usos_bus, n= 10), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col() + labs(title = "Colectivos", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+
+gtop_subte <- ggplot(data = usos_subte, aes(x = usos_subte$desc_linea, y = usos_subte$`sum(cantidad_usos)`)) + labs(title = "Subte", x = "", y = "Usos") + geom_col() + theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+
+# Genero los gráficos de las 10 líneas más usadas de colectivos y los usos por línea de subte discriminado por nivel educativo
+
+gtop_bus_prim <- ggplot(data = head(usos_bus_primaria, n= 10), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col() + labs(title = "Colectivos Primaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+
+gtop_bus_secu <- ggplot(data = head(usos_bus_secundaria, n= 10), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col() + labs(title = "Colectivos Secundaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+
+gtop_subte_prim <- ggplot(data = head(usos_subte_primaria), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col() + labs(title = "Subte Primaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+
+gtop_subte_secu <- ggplot(data = head(usos_subte_secundaria), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col() + labs(title = "Subte Secundaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+```
+Durante el mes de `r M` del año `r y` se realizaron `r  total_usos` viajes en el marco del Boleto Estudiantil de la Ciudad Autónoma de Buenos Aires. 
+
+```{r tabla_gral, echo=FALSE} 
+#Tabla con total de usos por modo de transporte
+
+kable(data.frame(sum(usos_bus$`sum(cantidad_usos)`), sum(usos_subte$`sum(cantidad_usos)`), row.names = ("Usos")), caption = "Usos por modo de transporte", col.name = c("Colectivo", "Subte"))
+
+```
+
+En las siguientes tablas se pueden observar las diez líneas de colectivo que registraron más cantidad de usos (Tabla 2) y los usos desagregados por línea de subterráneo (Tabla 3)
+
+```{r tabla_modos, echo=FALSE, results='asis'}
+
+# Tablas con tablas de 10 lineas más usadas de colectivos y los usos por línea de subte
+
+cat(c("\\begin{table}[!htb]
+    \\begin{minipage}{.5\\linewidth}
+      \\caption{Líneas de colectivo de mayor uso}
+      \\centering
+      \\vspace{3mm}",
+        top_usos_bus,
+    "\\end{minipage}%
+    \\begin{minipage}{.5\\linewidth}
+      \\centering
+        \\caption{Usos líneas de subte}
+        \\vspace{3mm}",
+        top_usos_subte,
+    "\\end{minipage} 
+\\end{table}"
+))  
+
+# Gráficos de las 10 líneas más usadas de colectivos y los usos por línea de subte
+
+plot_grid(gtop_bus, gtop_subte, ncol = 2)
+```
+
+Diferenciando por nivel educativo se tiene que los estudiantes de primaria realizaron `r total_primaria` usos y los estudiantes de nivel secundario (exceptuando a aquellos que asisten a los CFP) realizaron `r total_secundaria`. En la tabla 4 se presentan los usos discriminados por modos y niveles educativos.
+
+```{r tabla, echo=FALSE}
+
+# Tabla de usos por modo y nivel educativo
+kable(data.frame(Primaria = c(sum(usos_bus_primaria$`sum(cantidad_usos)`),
+                              sum(usos_subte_primaria$`sum(cantidad_usos)`),sum(usos_primaria$`sum(cantidad_usos)`)),
+                Secundaria = c(sum(usos_bus_secundaria$`sum(cantidad_usos)`), sum(usos_subte_secundaria$`sum(cantidad_usos)`),
+                               sum(usos_secundaria$`sum(cantidad_usos)`)),
+                Total = c(sum(usos_bus$`sum(cantidad_usos)`), sum(usos_subte$`sum(cantidad_usos)`), sum(reporte_be_sum1$`sum(cantidad_usos)`)),
+                row.names = c("Colectivo", "Subte", "Total")), caption = "Usos por modo y nivel educativo")
+```
+
+
+```{r tabla_nivel, echo = FALSE, results = 'asis'}
+
+# Gráficos de las 10 líneas más usadas de colectivos y los usos por línea de subte discriminado por nivel educativo
+
+plot_grid(gtop_bus_prim, gtop_bus_secu, gtop_subte_prim, gtop_subte_secu, ncol = 2)
+```
+
