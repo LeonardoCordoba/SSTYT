@@ -1,6 +1,6 @@
 ---
 title: "Informe de Seguimiento BE"
-author: "SSTYTRA"
+author: "SSTYTRA:Área de explotación de datos"
 date:
 output: pdf_document
 graphics: yes
@@ -90,19 +90,29 @@ top_usos_subte <- kable(usos_subte, format = "latex", booktabs = TRUE, col.names
 
 # Genero los gráficos de las 10 líneas más usadas de colectivos y los usos por línea de subte
 
-gtop_bus <- ggplot(data = head(usos_bus, n= 10), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col() + labs(title = "Colectivos", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+gtop_bus <- ggplot(data = head(usos_bus, n= 10), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col(fill = "firebrick")  + labs(title = "Colectivos", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=90, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
 
-gtop_subte <- ggplot(data = usos_subte, aes(x = usos_subte$desc_linea, y = usos_subte$`sum(cantidad_usos)`)) + labs(title = "Subte", x = "", y = "Usos") + geom_col() + theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+gtop_subte <- ggplot(data = usos_subte, aes(x = usos_subte$desc_linea, y = usos_subte$`sum(cantidad_usos)`, fill = "yellow")) + labs(title = "Subte", x = "", y = "Usos") + geom_col(fill =  c("turquoise3", "red", "royalblue3", "darkgreen", "darkorchid4", "gold", "peru")) + theme(axis.text.x = element_text(angle=90, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+
+# Genero las tablas de las 10 líneas más usadas de colectivos y los usos por línea de subte discriminado por nivel educativo
+
+top_usos_bus_prim <- kable(head(usos_bus_primaria, n= 10), format = "latex", booktabs = TRUE, col.names = c("Línea", "Usos"), align = 'lc')
+
+top_usos_subte_prim <- kable(usos_subte_primaria, format = "latex", booktabs = TRUE, col.names = c("Línea", "Usos"), align = 'lc')
+
+top_usos_bus_secu <- kable(head(usos_bus_secundaria, n= 10), format = "latex", booktabs = TRUE, col.names = c("Línea", "Usos"), align = 'lc')
+
+top_usos_subte_secu <- kable(usos_subte_secundaria, format = "latex", booktabs = TRUE, col.names = c("Línea", "Usos"), align = 'lc')
 
 # Genero los gráficos de las 10 líneas más usadas de colectivos y los usos por línea de subte discriminado por nivel educativo
 
-gtop_bus_prim <- ggplot(data = head(usos_bus_primaria, n= 10), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col() + labs(title = "Colectivos Primaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+gtop_bus_prim <- ggplot(data = head(usos_bus_primaria, n= 10), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col(fill = "firebrick") + labs(title = "Colectivos Primaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=90, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
 
-gtop_bus_secu <- ggplot(data = head(usos_bus_secundaria, n= 10), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col() + labs(title = "Colectivos Secundaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+gtop_bus_secu <- ggplot(data = head(usos_bus_secundaria, n= 10), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col(fill = "firebrick") + labs(title = "Colectivos Secundaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=90, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
 
-gtop_subte_prim <- ggplot(data = head(usos_subte_primaria), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col() + labs(title = "Subte Primaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+gtop_subte_prim <- ggplot(data = head(usos_subte_primaria), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col(fill =  c("turquoise3", "red", "royalblue3", "darkgreen", "darkorchid4", "gold")) + labs(title = "Subte Primaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=90, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
 
-gtop_subte_secu <- ggplot(data = head(usos_subte_secundaria), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col() + labs(title = "Subte Secundaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=70, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
+gtop_subte_secu <- ggplot(data = head(usos_subte_secundaria), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col(fill =  c("turquoise3", "red", "royalblue3", "darkgreen", "darkorchid4", "gold")) + labs(title = "Subte Secundaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=90, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
 ```
 Durante el mes de `r M` del año `r y` se realizaron `r  total_usos` viajes en el marco del Boleto Estudiantil de la Ciudad Autónoma de Buenos Aires. 
 
@@ -133,16 +143,20 @@ cat(c("\\begin{table}[!htb]
         top_usos_subte,
     "\\end{minipage} 
 \\end{table}"
-))  
+)) 
+```
 
+A continuación se presenta en gráficos la información de las tablas 2 y 3
+
+```{r graficos_modos, echo = FALSE}
 # Gráficos de las 10 líneas más usadas de colectivos y los usos por línea de subte
 
-plot_grid(gtop_bus, gtop_subte, ncol = 2)
+plot_grid(gtop_bus, gtop_subte, ncol = 2, align = "h")
 ```
 
 Diferenciando por nivel educativo se tiene que los estudiantes de primaria realizaron `r total_primaria` usos y los estudiantes de nivel secundario (exceptuando a aquellos que asisten a los CFP) realizaron `r total_secundaria`. En la tabla 4 se presentan los usos discriminados por modos y niveles educativos.
 
-```{r tabla, echo=FALSE}
+```{r tabla_nivel_modo, echo=FALSE}
 
 # Tabla de usos por modo y nivel educativo
 kable(data.frame(Primaria = c(sum(usos_bus_primaria$`sum(cantidad_usos)`),
@@ -153,8 +167,46 @@ kable(data.frame(Primaria = c(sum(usos_bus_primaria$`sum(cantidad_usos)`),
                 row.names = c("Colectivo", "Subte", "Total")), caption = "Usos por modo y nivel educativo")
 ```
 
+En las tablas 5 y 6 se presenta el detalle de los usos de las líneas de colectivos más utilizadas por cada nivel educativo. En las tablas 7 y 8 se presentan los usos en las líneas de subterráneo separado por cada nivel educativo.
 
-```{r tabla_nivel, echo = FALSE, results = 'asis'}
+```{r tabla_top_nivel_modo, echo=FALSE, results='asis'}
+
+# Tablas con tablas de 10 lineas más usadas de colectivos y los usos por línea de subte
+
+cat(c("\\begin{table}[!htb]
+    \\begin{minipage}{.5\\linewidth}
+      \\caption{Líneas de colectivo de mayor uso: Primaria}
+      \\centering
+      \\vspace{3mm}",
+        top_usos_bus_prim,
+    "\\end{minipage}%
+    \\begin{minipage}{.5\\linewidth}
+      \\centering
+        \\caption{Líneas de colectivo de mayor uso: Secundaria}
+        \\vspace{3mm}",
+        top_usos_bus_secu,
+    "\\end{minipage}%
+
+    \\begin{minipage}{.5\\linewidth}
+      \\caption{Usos líneas de subte: Primaria}
+      \\centering
+      \\vspace{3mm}",
+        top_usos_subte_prim,
+    "\\end{minipage}%
+    \\begin{minipage}{.5\\linewidth}
+      \\centering
+        \\caption{Usos líneas de subte: Secundaria}
+        \\vspace{3mm}",
+        top_usos_subte_secu,
+    "\\end{minipage} 
+\\end{table}"
+)) 
+```
+
+A continuación, se presentan los datos de las tablas 5 a 8 en gráficos. 
+
+```{r graficos_top_nivel_modo, echo = FALSE}
+
 
 # Gráficos de las 10 líneas más usadas de colectivos y los usos por línea de subte discriminado por nivel educativo
 
