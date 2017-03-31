@@ -1,6 +1,8 @@
 #1er paso - matriz OD
 #Paso de tabla gps_mov a matriz OD completa
 
+
+################## SETUP ################
 rm(list = ls())
 library(RPostgreSQL) #Para establecer la conexión
 library(data.table)
@@ -23,10 +25,16 @@ con <- dbConnect(
   password = pw
 )
 
+## Tablas
 
-# Modifico la tabla base
 
 gps_mov <- "mov_dw.a2016_05_4"
+
+zonas <- "matriz_od.zonas"
+
+###################### ETL pre-matriz ##################################
+
+# Modifico la tabla base
 
 # Creo columna 'mejor_geom'
 
@@ -89,9 +97,39 @@ query <- paste("DROP TABLE matriz_od.tipo_viajero ")
 dbGetQuery(con, query)
 
 ##### Zonificación #####
-update matriz_od.a2016_05_4 a
-set id_zona = (SELECT b.id from matriz_od.zonas b 
-               where a.mejor_geom && b.geom and st_distance(a.mejor_geom,b.geom) = 0 LIMIT 1)
+
+query <- paste("ALTER TABLE", gps_mov, " ADD COLUMN id_zona integer", sep = "")
+
+dbGetQuery(con, query)
+
+query <- paste("update ", gps_mov, " a set id_zona = (SELECT b.id from ", zonas, " b where a.mejor_geom && b.geom and st_distance(a.mejor_geom,b.geom) = 0 LIMIT 1)", sep = "")
+
+dbGetQuery(con, query)
+
+##### Si quiero puedo sacar las tarjetas que hacen movimientos fuera de la zonificación
+
+query <- paste("select distinct nro_tarjeta INTO  matriz_od.tblinter_tarjetas_sin_zona from ", gps_mov , " where id_zona is null", sep = '')
+
+dbGetQuery(con, query)
+
+query <- paste("DELETE FROM ", gps_mov ," a where EXISTS(SELECT b.nro_tarjeta FROM matriz_od.tblinter_tarjetas_sin_zona b WHERE a.nro_tarjeta = b.nro_tarjeta)", sep = '')
+
+dbGetQuery(con, query)
+
+query <- paste("DROP TABLE matriz_od.tblinter_tarjetas_sin_zona",sep='')
 
 
+################ MATRIZ OD ####################################################################################
 
+## Armo tabla vacía
+
+mov_od <- data.frame(id_zona_origen = as.numeric(character()),
+                 id_zona_destino = as.numeric(character()), 
+                 hora_inicio = as.Date(character()), 
+                 nro_viaje_origen = as.numeric(character()),
+                 nro_viaje_destino = as.numeric(character()),
+                 stringsAsFactors=FALSE)
+
+## Cargo la tabla
+
+dt <- as.data.table
