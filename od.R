@@ -10,7 +10,7 @@ library(dplyr)
 library(foreach)
 library(doMC)
 
-registerDoMC(40)
+registerDoMC(20)
 
 pw <- {
   "postgres"
@@ -223,30 +223,39 @@ dt_1 <- as.data.table(dbGetQuery(con, query))
 
 setkey(dt_1, nro_tarjeta, nro_viaje, etapa_viaje)
 
+#Saco los passback
+dt_1 <- dt_1 %>% filter(is.na(tarjeta_passback) == TRUE)
+
 #Lista de tarjetas
 tarjetas <- as.data.table(dt_1 %>% distinct(nro_tarjeta))
 
 #Tarjetas con una sola trx
-tarjeta_1_trx <-
-  (dt_1 %>% group_by(nro_tarjeta) %>% summarise(n = n()) %>% filter(n == 1))$nro_tarjeta
+tarjeta_1_trx <- (dt_1 %>% group_by(nro_tarjeta) %>% summarise(n = n()) %>% filter(n == 1))$nro_tarjeta
 
 dt_1$id_zona_destino_etapa <- NA
 dt_1$id_zona_destino_viaje <- NA
+dt_1$id_destino_etapa <- NA
+dt_1$id_destino_viaje <- NA
 
-dt_1 <- dt_1[!(nro_tarjeta %in% tarjeta_1_trx), ]
 
 
 dt_tarj <- foreach(i = 1:nrow(tarjetas), .combine = rbind) %dopar% {
-  tarj <- tarjetas[i, ]
   
-  dt_tarj <- dt_1[tarj, ]
+  tarj <- tarjetas[i,]
+  
+  dt_tarj <- dt_1[tarj,]
+  
   n_row <-   nrow(dt_tarj)
   
+  nro_viajes <- dt_tarj[, "nro_viaje"]
+  
+  nro_viajes_distintos <- n_distinct(nro_viajes)
   
   
-  for (j in 1:n_row)
+  max_nro_viaje <- max(nro_viajes)
+  
+  for (j in 1:n_row)  {
     
-  {
     nro_viaje <- dt_tarj[j, 'nro_viaje']
     etapa_viaje <- dt_tarj[j, 'etapa_viaje']
     id <- dt_tarj[j, 'id']
@@ -256,20 +265,127 @@ dt_tarj <- foreach(i = 1:nrow(tarjetas), .combine = rbind) %dopar% {
       nro_viaje_anterior <- dt_tarj[j - 1, 'nro_viaje']
       etapa_viaje_anterior <- dt_tarj[j - 1, 'etapa_viaje']
       dt_tarj$id_zona_destino_etapa[j - 1] <- origen
+      dt_tarj$id_destino_etapa[j - 1] <- id
       
       if (j == n_row) {
         dt_tarj$id_zona_destino_etapa[j] <- dt_tarj[1, id_zona]
+        dt_tarj$id_destino_etapa[j] <- dt_tarj[1, id]
       }
       
-      if (nro_viaje != nro_viaje_anterior)
-      {
-        dt_tarj$id_zona_destino_viaje[which(dt_tarj$nro_viaje == nro_viaje_anterior)] <-
-          origen
+      if (nro_viajes_distintos > 1) {
+        if (nro_viaje != nro_viaje_anterior)
+        {
+          dt_tarj$id_zona_destino_viaje[which(dt_tarj$nro_viaje == nro_viaje_anterior)] <-
+            origen
+          dt_tarj$id_destino_viaje[which(dt_tarj$nro_viaje == nro_viaje_anterior)] <-id
+          
+        }
+        
+        if (nro_viaje == max_nro_viaje) {
+          dt_tarj$id_zona_destino_viaje[which(dt_tarj$nro_viaje == max_nro_viaje)] <- dt_tarj[1, id_zona]
+          dt_tarj$id_destino_viaje[which(dt_tarj$nro_viaje == max_nro_viaje)] <- dt_tarj[1, id]
+        }
       }
-      
-      
     }
     
-    return(dt_tarj)
   }
   
+  return(dt_tarj)
+  
+}
+
+
+
+
+rm(dt_1)
+
+dt_tarj$id_zona_destino_viaje[which(dt_tarj$id_zona_destino_viaje == "NA")] <- NA
+
+dt_tarj <- as.data.table(dt_tarj)
+setkey(dt_tarj, id)
+
+##Calculo distancia entre la línea que tomó y el destino
+
+#Cargo tabla con empresa, línea, ramal
+elr <- 
+  dbGetQuery(con,
+             "select * from elr")
+
+#Cargo rutas
+rutas <-
+  get_postgis_query(
+    con,
+    "select * from informacion_geografica.recorridos_bacomollego_wgs84",
+    geom_name = "geom"
+  )
+
+
+#Cargo tabla con zonas
+zonas <-
+  get_postgis_query(con, "select * from matriz_od.zonas",  geom_name = 'geom')
+
+#Cargo tabla con id de gps_mov
+
+gps <-   get_postgis_query(con, paste("select id, mejor_geom from ", gps_mov,sep=''),  geom_name = 'mejor_geom')
+
+#Establezco la proyección original
+
+proj4string(rutas) <-
+  CRS("+init=epsg:4326 + proj=longlat+ellps=WGS84 +datum=WGS84 +no_defs+towgs84=0,0,0")
+
+proj4string(gps) <-
+  CRS("+init=epsg:4326 + proj=longlat+ellps=WGS84 +datum=WGS84 +no_defs+towgs84=0,0,0")
+
+#Transformo a GK-BA
+
+rutas <-
+  spTransform(
+    rutas,
+    "+proj=tmerc +lat_0=-34.629269 +lon_0=-58.4633 +k=0.9999980000000001 +x_0=100000 +y_0=100000 +ellps=intl +units=m +no_defs "
+  )
+
+gps <-
+  spTransform(
+    gps,
+    "+proj=tmerc +lat_0=-34.629269 +lon_0=-58.4633 +k=0.9999980000000001 +x_0=100000 +y_0=100000 +ellps=intl +units=m +no_defs "
+  )
+
+#Calculo la distancia entre la línea que se tomó y la línea donde se subió
+
+id_tbl <- as.data.table(dt_1 %>% distinct(id))
+
+dt_tarj_final <- foreach(i = 1:nrow(dt_tarj), .combine = rbind) %dopar% {
+  
+  modo <- dt_tarj[i, modo]
+  
+  if (modo == "BUS")
+  {
+    id <- dt_tarj[i, id]
+    id_destino_viaje_dt <- dt_tarj[i, id_destino_viaje]
+    id_destino_etapa_dt <- dt_tarj[i, id_destino_etapa]
+    
+    destino_etapa <- gps[which(id == id_destino_etapa_dt),]
+    destino_viaje <- gps[which(id == id_destino_viaje_dt),]
+    
+    linea <- dt_tarj[i, desc_linea]
+    linea <- gsub("[[:space:]]", "", linea)
+    linea <- as.integer(gsub("[A-Z]", "", linea))
+    
+    
+    #Ramales candidatos de la línea
+    ruta <-  rutas[which(rutas$linea == linea), ]
+    
+    dist <- gDistance(destino_etapa, ruta, byid = TRUE)
+    
+    #Esto es horrible pero funciona
+    dist <- as.data.frame(t(dist))
+    dist <- min(colnames(dist))
+    
+    dt_tarj$distancia[which(dt_tarj$id == id)] <- dist
+    
+    rm(dist)
+  }
+  
+  return(dt_tarj[i])
+  
+}
