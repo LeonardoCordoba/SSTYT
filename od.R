@@ -9,8 +9,13 @@ library(data.table)
 library(dplyr)
 library(foreach)
 library(doMC)
+library(spatstat)
+library(rgeos) #Para usar gDistance()
+library(sp)
+library(rgdal) #Para poder establecer proyecciones
+library(postGIStools)
 
-registerDoMC(20)
+registerDoMC(30)
 
 pw <- {
   "postgres"
@@ -219,7 +224,9 @@ query <-
   )
 
 ## data.table
-dt_1 <- as.data.table(dbGetQuery(con, query))
+dt_1 <- dbGetQuery(con, query)
+
+dt_1 <- as.data.table(dt_1)
 
 setkey(dt_1, nro_tarjeta, nro_viaje, etapa_viaje)
 
@@ -238,8 +245,8 @@ dt_1$id_destino_etapa <- NA
 dt_1$id_destino_viaje <- NA
 
 
-
-dt_tarj <- foreach(i = 1:nrow(tarjetas), .combine = rbind) %dopar% {
+dt_resultado <- NULL
+for (i in 1:nrow(tarjetas)) {
   
   tarj <- tarjetas[i,]
   
@@ -290,18 +297,15 @@ dt_tarj <- foreach(i = 1:nrow(tarjetas), .combine = rbind) %dopar% {
     
   }
   
-  return(dt_tarj)
+  dt_resultado <- rbind(dt_resultado, dt_tarj)
   
 }
 
-
-
-
 rm(dt_1)
+rm(dt_tarj)
 
 dt_tarj$id_zona_destino_viaje[which(dt_tarj$id_zona_destino_viaje == "NA")] <- NA
 
-dt_tarj <- as.data.table(dt_tarj)
 setkey(dt_tarj, id)
 
 ##Calculo distancia entre la línea que tomó y el destino
