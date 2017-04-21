@@ -1,0 +1,72 @@
+---
+title: "Matriz OD"
+author: "SSTYT"
+date: "21/4/2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(echo = TRUE)
+
+library(RPostgreSQL) #Para establecer la conexión
+library(data.table)
+library(dplyr)
+library(spatstat)
+library(rgeos) #Para usar gDistance()
+library(sp)
+library(rgdal) #Para poder establecer proyecciones
+library(postGIStools)
+
+pw <- {
+  "postgres"
+}
+
+# loads the PostgreSQL driver
+drv <- dbDriver("PostgreSQL")
+# creates a connection to the postgres database
+# note that "con" will be used later in each connection to the database
+con <- dbConnect(
+  drv,
+  dbname = "sube",
+  host = "10.78.14.54",
+  port = 5432,
+  user = "postgres",
+  password = pw
+)
+```
+
+## R Markdown
+
+## Introducción
+
+En el presente informe se analiza la perspectiva de un metrobús transversal a la C.A.B.A.
+
+Para ello se generó una matriz Origen-Destino ...
+
+
+
+```{r caracterizacion_dia}
+tripnet <- read.csv("/home/innovacion/tripnet_viajes.csv")
+ranking_atractores <- tripnet %>% group_by(to_id) %>% summarise(n = sum(q_viajes_exp))
+ranking_generadores <- tripnet %>% group_by(from_id) %>% summarise(n = sum(q_viajes_exp))
+
+posibles_pares <- dbGetQuery(
+  con,
+  "select distinct a.id as id_a, b.id as id_b from
+  (select distinct id from matriz_od.zonas) a,
+  (select distinct id from matriz_od.zonas) b
+  where b.id>a.id
+  and (a.id in (select distinct id from informacion_geografica.zonificacion_para_mtb_transversal) or
+  b.id in (select distinct id from informacion_geografica.zonificacion_para_mtb_transversal))"
+  )
+  
+pares_q <- sqldf("select id_a, id_b, sum(q_viajes_exp)
+      from posibles_pares a
+inner join tripnet b
+      on (a.id_a = b.from_id and a.id_b = b.to_id) OR (a.id_a = b.to_id and a.id_b = b.from_id)
+group by id_a, id_b")
+
+```
+
+
