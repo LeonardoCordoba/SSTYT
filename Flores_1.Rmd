@@ -1,0 +1,235 @@
+---
+title: 'Flores: Estación Flores'
+author: "SSTYTRA"
+date: "10 de abril de 2017"
+output: pdf_document
+---
+
+```{r param, include=FALSE}
+#Nombre de la tabla del shape del CTB
+shp <- "informacion_geografica.flores_1"
+
+#Nombre de la tabla de movimientos y gps
+gps_mov <- "gps_mov.a2016_05_04"
+
+#Nombre de la tabla de la poblacion
+mov_total <- "mov_dw.a2016_05_4"
+
+#Nombre de la geom del shape
+geom_shp <- "geom"
+
+#Nombre de la geom de la tabla de movimientos y gps
+geom_gps_mov <- "geom_ant"
+
+#Metros del buffer
+buffer <- 0
+
+#Nombre de la geom del shape con buffer
+geom_buffer <- paste("geom_buffer_", buffer, sep = '')
+
+#Día inicio del analisis
+dia_init <- 4
+
+#Dia final del análisis
+dia_fin <- 4
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library("knitr")
+library("dplyr")
+library("ggplot2")
+library("sqldf")
+library("data.table")
+```
+
+```{r postgres conn, include=FALSE}
+
+options(sqldf.RPostgreSQL.user = "postgres",
+        sqldf.RPostgreSQL.password = "123456",
+        sqldf.RPostgreSQL.dbname = "sube",
+        sqldf.RPostgreSQL.host = "10.78.14.54",
+        sqldf.RPostgreSQL.port = 5432)
+
+
+```
+
+```{r ponderador, include=FALSE}
+# Ponderador
+
+# N muestra
+n_muestra <- sqldf(paste("SELECT COUNT(1) FROM ",gps_mov , " WHERE modo = 'BUS' AND diferencia_tiempo_anterior <= 10 OR diferencia_tiempo_siguiente <= 10" , sep = ""), drv = "PostgreSQL")
+
+#N poblacional
+n_poblacional <- sqldf(paste("SELECT COUNT(1) FROM ",mov_total, " WHERE modo = 'BUS' " , sep = ""), drv = "PostgreSQL")
+
+#Ponderador
+ponderador <- as.integer(n_poblacional / n_muestra)
+
+```
+
+```{r shape setup, include= FALSE}
+#Sólo usar si hay que crear un buffer y un índice geográfico en el buffer
+
+#sqldf(paste("alter table ", shp, " add column ",  geom_buffer, " public.geometry ;", sep = ''   ), drv = "PostgreSQL")
+
+#sqldf(paste("update ", shp, " set ",  geom_buffer, " = st_buffer(", geom_shp, "::geography, ", buffer, " )::geometry ;", sep = ''   ), drv = "PostgreSQL", sep = '')
+
+#sqldf(paste("CREATE INDEX idx_", shp, "_", geom_buffer, " ON ", shp, " USING gist (", geom_buffer, ")", sep = ''   ), drv = "PostgreSQL", sep = '')
+```
+
+```{r extraccion, include= FALSE}
+#Usar geom_shp o geom_buffer según corresponda
+#Agregar las columnas de la tabla del shape que sean necesarias.
+
+base <- sqldf(paste("SELECT nro_tarjeta, codigo_contrato, saldo, categoria, modo, desc_linea, interno ,nro_viaje, etapa_viaje, d, h, velocity_anterior, velocity_siguiente, a.geom_ant FROM ", gps_mov," a, ", shp, " b ",
+                    " WHERE a.d BETWEEN ", dia_init, " AND ", dia_fin,
+                    " AND (( modo = 'BUS' AND diferencia_tiempo_anterior <= 10 OR diferencia_tiempo_siguiente <= 10) OR (modo = 'SUBTE') OR (modo = 'TREN')) AND a.",geom_gps_mov," && b.", geom_shp, " AND ST_DISTANCE(a.",geom_gps_mov," , b.", geom_shp, " ) = 0 ;", sep = ""), drv = "PostgreSQL")
+
+base2 <- sqldf(paste("SELECT nro_tarjeta, codigo_contrato, saldo, categoria, modo, desc_linea, interno ,nro_viaje, etapa_viaje, d, h FROM ",  mov_total, " a WHERE a.d BETWEEN ", dia_init, " AND ", dia_fin," AND ( modo = 'BUS'  OR modo = 'SUBTE' OR modo = 'TREN') ;", sep = ""), drv = "PostgreSQL")
+```
+
+```{r queries_string, include=FALSE}
+# En cada caso hay que extrapolar
+# Cantidad de transacciones, cantidad de transacciones en subte, en colectivo y tren
+q_trax_modo <- count(base, modo, categoria)
+q_trax_modo <- as.data.table(q_trax_modo)
+q_trax_modo[, total_extrapolado := ifelse(modo == 'BUS' , n * ponderador, n)]
+
+sum_trax <- sum(q_trax_modo$total_extrapolado)
+
+# Cantidad de transbordos, cantidad de transbordos en subte, en colectivo y en tren
+q_trb_modo <- filter(base, base$etapa_viaje > 1) %>% count(., modo, categoria)
+q_trb_modo <- as.data.table(q_trb_modo)
+q_trb_modo[, total_extrapolado := ifelse(modo == 'BUS' , n * ponderador, n)]
+
+sum_trb <- sum(q_trb_modo$total_extrapolado)
+porc_trb <- round((sum_trb/sum_trax)*100, 2)
+
+# TRX por hora
+q_trax_hora <- count(base, modo, h)
+q_trax_hora <- as.data.table(q_trax_hora)
+q_trax_hora[, total_extrapolado := ifelse(modo == 'BUS' , n * ponderador, n)]
+
+
+# TB por hora
+q_trb_hora <- filter(base, base$etapa_viaje > 1) %>% count(., modo, h)
+q_trb_hora <- as.data.table(q_trb_hora)
+q_trb_hora[, total_extrapolado := ifelse(modo == 'BUS' , n * ponderador, n)]
+
+# TRX por linea
+q_trx_linea <- count(filter(base, base$modo == "BUS"), desc_linea)
+q_trx_linea$total_extrapolado <- q_trx_linea$n * ponderador
+sum_trx_bus <- sum(q_trx_linea$total_extrapolado)
+q_trx_linea <- q_trx_linea[order(q_trx_linea$total_extrapolado, decreasing = TRUE), c(1,3)]
+q_trx_linea$porc_trx <- round((q_trx_linea$total_extrapolado / sum_trax)*100, 2)
+q_trx_linea$porc_trx_bus <- round((q_trx_linea$total_extrapolado / sum_trx_bus)*100, 2)
+
+#TRB por linea
+q_trb_linea <- count(filter(base, base$modo == "BUS", base$etapa_viaje > 1), desc_linea)
+q_trb_linea$total_extrapolado <- q_trb_linea$n * ponderador
+sum_trb_bus <- sum(q_trb_linea$total_extrapolado)
+q_trb_linea <- q_trb_linea[order(q_trb_linea$total_extrapolado, decreasing = TRUE), c(1,3)]
+q_trb_linea$porc_trb <- round((q_trb_linea$total_extrapolado / sum_trb)*100, 2)
+q_trb_linea$porc_trb_bus <- round((q_trb_linea$total_extrapolado / sum_trb_bus)*100, 2)
+
+# TRX por hora, bus
+q_trx_bus_h <- count(filter(base, base$modo == "BUS"), h)
+q_trx_bus_h$total_extrapolado <- q_trx_bus_h$n * ponderador
+
+# TRX por hora, tren
+q_trx_tren_h <- count(filter(base, base$modo == "TREN"), h)
+#q7$total_extrapolado <- q7$n * as.integer(ponderador)
+
+# TRX por hora, subte
+q_trx_subte_h <- count(filter(base, base$modo == "SUBTE"), h)
+#q8$total_extrapolado <- q8$n * as.integer(ponderador)
+
+# velocidad por hora
+q_vel_hora <- summarise(group_by(filter(base, base$modo == "BUS"), h), mean(velocity_anterior))
+
+# transacciones por línea, intersecci
+#q10 <- count(base, intersecci, desc_linea)
+#q10$total_extrapolado <- q10$n * as.integer(ponderador)
+
+# Matriz de transbordos intermodal
+# Me quedo con los nro_viajes que son de una etapa mayor a 1
+viajes_mas_1etapa <- filter(base, base$etapa_viaje > 1)
+# Joineo con la etapa de viaje previa
+trb_modos <- left_join(viajes_mas_1etapa, base2, by = "nro_viaje") %>% filter(., etapa_viaje.y == etapa_viaje.x - 1)
+# Armo la tabla de transbordos
+tabla_trb <- table(trb_modos$modo.y, trb_modos$modo.x)
+# Multiplico por el ponderador
+tabla_trb[,1] <- tabla_trb[,1] * ponderador
+tabla_trb_df <- as.data.frame(tabla_trb)
+# Armo la tabla con datos porcentuales
+tabla_trb_porc <- round((tabla_trb/sum_trb)*100, 2) 
+# faltante <- left_join(base3, qp, by = "nro_viaje")
+```
+Analisis para la zona del barrio de Flores que incluye la estación de subterráneo "San José de Flores" de la Línea A y la estación de tren "Estación Flores" del Ferrocarril Sarmiento
+
+## Transacciones
+
+En el entorno seleccionado se realizan `r sum_trax` transacciones en el día.
+En la tabla 1 y el gráfico siguiente se presenta el número de transaciones realizadas en los distintos modos. 
+
+```{r tablas, echo= FALSE}
+# Tabla transacciones por modo
+kable(q_trax_modo[,c(1,2,4)], col.names = c("Modo", "Categoría", "Total extrapolado"), align = 'llr', caption = "Transacciones")
+
+# Gráfico transacciones por modo
+ggplot(q_trax_modo, aes(x = modo, y = total_extrapolado)) + theme_classic() + geom_bar(stat="identity", aes(fill = modo), size = 1)+ theme(axis.text.x = element_text(angle=0), panel.grid.major.y = element_line(colour = "slategrey")) + labs(title="Transacciones", x= "", y = "") + scale_fill_brewer(palette = "Set1")
+```
+
+En la tabla 2 se presentan las 10 líneas de colectivos con mayor cantidad de transacciones en la zona.
+
+```{r lineas, echo= FALSE}
+# Tabla top líneas colectivos
+kable(head(q_trx_linea, n= 10),  col.names = c("Línea", "Total extrapolado", "Respecto a total de transacciones (%)", "Respecto a total de transacciones en bus (%)"), align = 'lrrr', caption = "Líneas con mayor cantidad de transacciones")
+
+kable(head(q_trb_linea, n= 10),  col.names = c("Línea", "Total extrapolado", "% trb", "% trb bus"), align = 'lrrr', caption = "Líneas con mayor cantidad de transbordos")
+```
+
+
+## Transbordos
+
+En el entorno seleccionado se realizan `r sum_trb` transbordos en el día. Los mismos representan el `r porc_trb` % de las transacciones.
+En la tabla 3 y el gráfico siguiente se presenta el número de transbordos discriminados por modo. 
+
+```{r transbordos, echo= FALSE}
+
+# Tabla transbordos por modo
+kable(q_trb_modo[,c(1,2,4)], col.names = c("Modo", "Categoría", "Total extrapolado"), align = 'llr', caption = "Transbordos")
+
+# Gráfico transbordos por modo
+ggplot(q_trb_modo, aes(x = modo, y = total_extrapolado)) + theme_classic() + geom_bar(stat="identity", aes(fill = modo), size = 1)+ theme(axis.text.x = element_text(angle=0), panel.grid.major.y = element_line(colour = "slategrey")) + labs(title="Transbordos", x= "", y = "") + scale_fill_brewer(palette = "Set1")
+
+```
+
+En la tabla 4 se presenta la matriz de transbordos entre modos. Las filas presentan el modo de la etapa anterior y en las columnas los modos de la etapa siguiente. En el gráfico siguiente se vuelca la información de la matriz.
+
+```{r matriz modos, echo= FALSE}
+
+# Matriz transbordos entre modos
+kable(tabla_trb, caption = "Matriz de transbordos entre modos")
+
+# Matriz transbordos entre modos (porcentaje)
+kable(tabla_trb_porc, caption = "Matriz de transbordos entre modos (porcentajes)")
+
+# Gráfico transbordos entre modos
+ggplot(tabla_trb_df, aes(x = Var2, y = Freq)) + theme_classic() + geom_bar(aes(fill= Var1), stat="identity", size = 1, position = "dodge") + theme(axis.text.x = element_text(angle=0), panel.grid.major.y = element_line(colour = "slategrey")) + labs(title="Transbordos", x= "Modo etapa siguiente", y = "", fill = "Modo etapa anterior") + scale_fill_brewer(palette = "Set1")
+
+ggplot(q_trax_hora, aes(x = h, y = total_extrapolado)) + theme_classic() + geom_line(aes(colour = modo, linetype = modo)) + theme(axis.text.x = element_text(angle=0), panel.grid.major.x = element_line(colour = "white")) + labs(title="Transacciones", x= "Hora", y = "", fill = "Modo") + scale_colour_brewer(palette = "Set1")
+
+ggplot(q_trb_hora, aes(x = h, y = total_extrapolado)) + theme_classic() + geom_line(aes(colour = modo, linetype = modo)) + theme(axis.text.x = element_text(angle=0), panel.grid.major.x = element_line(colour = "white")) + labs(title="Transbordos", x= "Hora", y = "", fill = "Modo") + scale_colour_brewer(palette = "Set1")
+```
+
+
+
+```{r guardar, echo= FALSE}
+write.csv(q_trax_modo, file = "q_trax_modo_est_flores.csv", row.names = TRUE)
+write.csv(q_trx_linea, file = "q_trx_linea_est_flores.csv", row.names = TRUE)
+write.csv(q_trb_modo, file = "q_trb_modo_est_flores.csv", row.names = TRUE)
+write.csv(tabla_trb, file = "q_trb_modo_est_flores.csv", row.names = TRUE)
+```
