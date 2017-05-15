@@ -1,5 +1,5 @@
 ############### Script para calcular las paradas de AMBA con la SUBE #################
-#rm(list= ls())
+rm(list= ls())
 
 ## Obtener paradas de AMBA
 library(RPostgreSQL)
@@ -74,8 +74,8 @@ for (i in 1:nrow(prov))
           df_linea_orientacion$grupos <- dbscan_obj$cluster
           tbl <-
             df_linea_orientacion %>% filter(grupos != 0) %>% group_by(grupos) %>% summarise(
-              long = mean(longitud_anterior),
-              lat = mean(latitud_anterior),
+              long = median(longitud_anterior),
+              lat = median(latitud_anterior),
               n = n()
             )
           tbl$linea <- linea
@@ -98,57 +98,94 @@ library(rgdal) #Para poder establecer proyecciones
 
 paradas <- paradas[-1,]
 
-spdf <- SpatialPointsDataFrame(coords = paradas[,c(2,3)], data = paradas,
-                               proj4string = CRS("+init=epsg:4326 + proj=longlat+ellps=WGS84 +datum=WGS84 +no_defs+towgs84=0,0,0"))
-spdf <-
+
+paradas_spdf <- SpatialPointsDataFrame(coords = paradas[,c(2,3)], data = paradas,
+                                       proj4string = CRS("+init=epsg:4326 + proj=longlat+ellps=WGS84 +datum=WGS84 +no_defs+towgs84=0,0,0"))
+
+
+paradas_spdf <-
   spTransform(
     spdf,
     "+proj=tmerc +lat_0=-34.629269 +lon_0=-58.4633 +k=0.9999980000000001 +x_0=100000 +y_0=100000 +ellps=intl +units=m +no_defs "
   )
 
+paradas_spdf$id <- seq_len(nrow(paradas_spdf))
+
 paradas_limpias <- NA
-
-i = 1
-j = 'O'
-
 
 for (i in 1:nrow(lineas))
 {
-  for (j in orientacion)
-    
+  paradas_candidatas <-
+    paradas_spdf[paradas_spdf$linea == lineas[i, ], ]
+  paradas_candidatas <-
+    paradas_candidatas[with(paradas_candidatas, order(-paradas_candidatas$n)), ]
+  
+  n_min <- quantile(paradas_candidatas$n)[2]
+  n_exception <- quantile(paradas_candidatas$n)[3]
+  rows <- nrow(paradas_candidatas)
+  eliminadas <- c(0)
+  
+  if (rows > 0)
   {
-    paradas_candidatas <-
-      spdf[spdf$linea == lineas[i, ] & spdf$orientacion ==  j, ]
-    paradas_candidatas <-
-      paradas_candidatas[with(paradas_candidatas, order(-paradas_candidatas$n)),]
-    
-    rows <- nrow(paradas_candidatas)
-    eliminadas <- c(0)
-    
-    if (rows > 0)
-    {
-      for (k in 1:(rows - 1)) {
-        for (l in (k + 1):rows)
+    for (k in 1:(rows - 1)) {
+      orientacion_k <- as.data.frame(paradas_candidatas[k,])$orientacion
+      n_k <- as.data.frame(paradas_candidatas[k,])$n
+      for (l in (k + 1):rows)
+      {
+        if (gDistance(paradas_candidatas[k, ], paradas_candidatas[l, ]) < 70)
         {
-          if (gDistance(paradas_candidatas[k, ], paradas_candidatas[l, ]) < 150)
+          orientacion_l <-
+            as.data.frame(paradas_candidatas[l, "orientacion"])$orientacion
+          n_l <- as.data.frame(paradas_candidatas[l,])$n
+          if (!(as.data.frame(paradas_candidatas)[k, "id"] %in% eliminadas))
           {
-            if (!(as.data.frame(paradas_candidatas)[k, "grupos"] %in% eliminadas))
+            if ((orientacion_k == 'O' &
+                 orientacion_l != 'E') |
+                (orientacion_k == 'E' &
+                 orientacion_l != 'O') |
+                (orientacion_k == 'N' &
+                 orientacion_l != 'S') |
+                (orientacion_k == 'S' &
+                 orientacion_l != 'N'))
             {
-              eliminadas <- rbind(grupo, as.data.frame(paradas_candidatas[l, 'grupos']))
+              if ((n_l > n_exception) == FALSE)
+              {
+                eliminadas <-
+                  rbind(eliminadas,
+                        as.data.frame(paradas_candidatas[l, 'id']))
+              }
             }
           }
         }
       }
-  
-          paradas_filtradas <-
-        paradas_candidatas[!(paradas_candidatas$grupos %in% eliminadas),]
+    }
+    
+    if (is.atomic(eliminadas) == FALSE)
+    {
+      paradas_filtradas <-
+        paradas_candidatas[!(paradas_candidatas$id %in% eliminadas$id), ]
+      
+      paradas_filtradas <-
+        as.data.frame(paradas_filtradas) %>% filter(n > n_min)
       
       paradas_limpias <-
-        rbind(paradas_limpias, as.data.frame(paradas_filtradas))
-  
+        rbind(paradas_limpias, paradas_filtradas)
+    }
+    
+    if (is.atomic(eliminadas) == TRUE)
+    {
+      paradas_filtradas <- paradas_candidatas
+      
+      paradas_filtradas <-
+        as.data.frame(paradas_filtradas) %>% filter(n > n_min)
+      
+      paradas_limpias <-
+        rbind(paradas_limpias, paradas_filtradas)
     }
   }
 }
+
+write.csv(paradas_limpias_final, file = "/home/innovacion/paradas_limpias_final.csv", sep = ";")
 
 #### Apéndice ETL
 
