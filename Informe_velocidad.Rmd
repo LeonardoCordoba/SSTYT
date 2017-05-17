@@ -84,3 +84,32 @@ kable(data.frame( Nombre = c("ID", "Dirección", "Nombre", "Promedio", "Desvío 
 ```
 
 Este tipo de tabla fue la que utilizamos para realizar el mapa presentado en la primera sección.
+
+**Colectivos**
+
+Actualmente contamos con información de velocidad de colectivos en la base de datos GPS de SUBE, desde mayo a septiembre de 2016. Cada colectivo registra su posición cada 4 minutos.
+
+La estructura (simplificada) de datos es:
+
+```{r datos_sube_1, echo = FALSE}
+
+kable(data.frame( Nombre = c("ID", "Línea", "Interno", "Fecha y hora", "Velocidad", "Posición"), Descripción = c("Identificador del punto GPS", "Línea de colectivo", "Interno de la línea", "Fecha en que se registro el dato GPS", "Velocidad registrada en el instante en que se captó el dato", "Coordenadas del punto GPS, en WGS84"))) 
+```
+
+Con esta información se puede calcular la velocidad promedio por tramo, a partir de ubicar los puntos GPS y calcular un promedio entre los puntos que caen en un mismo tramo. Además, es posible guardar la cantidad de datos que conformaron ese valor, es decir, con qué cantidad de muestra se generó el promedio, para tener una aproximación a la calidad del dato.
+De manera similar, con esta información:
+
+  a. Es posible realizar agrupaciones de los datos sobre velocidad a nivel hora (por día y para un conjunto de días). Esto facilita la interpretación de los datos
+  b. Es posible calcular resultados por calle o avenida.
+  c. De ser necesario se puede calcular la velocidad por orientación, es decir, si la velocidad está calculada con colectivos que se dirigen al 'Sur', 'Norte, 'Este' y 'Oeste'. En este caso no se calcula por el sentido según lo define la numeración.
+  
+La tabla que surge de este tipo de trabajo tiene la siguiente estructura:
+
+```{r datos_nokia_2, echo = FALSE}
+
+kable(data.frame( Nombre = c("ID", "Orientación", "Nombre", "Promedio", "Desvío estándar", "Mínimo", "Máximo","Muestra" , "Hora"), Descripción = c("Identificador del tramo", "Orientación definida como 'Sur', 'Norte, 'Este' y 'Oeste'", "Nombre de la calle", "Velocidad promedio del link por hora", "Desvío estándar de la velocidad promedio del link por hora", "Velocidad mínima del link por hora", "Velocidad máxima del link por hora","Cantidad de puntos GPS que se tomaron como muestra", "Hora (variable de agrupación)"))) 
+```
+
+Este tipo de tabla fue la que utilizamos para realizar el mapa presentado en la primera sección.
+  
+
