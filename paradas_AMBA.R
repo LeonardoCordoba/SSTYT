@@ -44,18 +44,18 @@ orientacion <- c('N','S','E','O')
 
 for (i in 1:nrow(prov))
 {
-  provincia <- prov[i,]
-  df_prov <- data[data$prov == provincia,]
+  provincia <- prov[i, ]
+  df_prov <- data[data$prov == provincia, ]
   
   for (j in 1:nrow(depto))
   {
-    departamento <- depto[j,]
-    df_depto <- df_prov[df_prov$depto == departamento,]
+    departamento <- depto[j, ]
+    df_depto <- df_prov[df_prov$depto == departamento, ]
     
     for (k in 1:nrow(lineas))
     {
-      linea <- lineas[k,]
-      df_linea <- df_depto[df_depto$desc_linea == linea,]
+      linea <- lineas[k, ]
+      df_linea <- df_depto[df_depto$desc_linea == linea, ]
       df_linea <- na.omit(df_linea)
       
       for (h in orientacion)
@@ -64,9 +64,10 @@ for (i in 1:nrow(prov))
         
         if (nrow(df_linea_orientacion) > 4)
         {
-          knn <- as.data.frame(kNNdist(df_linea_orientacion[, c(2, 3)], k = 4))
-          knn$total = knn$`1` + knn$`2` + knn$`3` + knn$`4`
-          Eps <- quantile(knn$total, 0.95)
+          knn <-
+            as.data.frame(kNNdist(df_linea_orientacion[, c(2, 3)], k = 4))
+          Eps <-
+            quantile(c(knn$`1`, knn$`2`, knn$`3`, knn$`4`), 0.95)
           dbscan_obj <-
             dbscan(df_linea_orientacion[, c(2, 3)],
                    eps = Eps,
@@ -78,11 +79,16 @@ for (i in 1:nrow(prov))
               lat = median(latitud_anterior),
               n = n()
             )
-          tbl$linea <- linea
-          tbl$orientacion <- h
-          tbl$depto <- departamento
-          tbl$prov <- provincia
-          paradas <- rbind(paradas, tbl)
+          if (nrow(tbl) > 0)
+          {
+            tbl$linea <- linea
+            tbl$orientacion <- h
+            tbl$depto <- departamento
+            tbl$prov <- provincia
+            paradas <- rbind(paradas, tbl)
+            
+          }
+          
         }
       }
     }
@@ -105,7 +111,7 @@ paradas_spdf <- SpatialPointsDataFrame(coords = paradas[,c(2,3)], data = paradas
 
 paradas_spdf <-
   spTransform(
-    spdf,
+    paradas_spdf,
     "+proj=tmerc +lat_0=-34.629269 +lon_0=-58.4633 +k=0.9999980000000001 +x_0=100000 +y_0=100000 +ellps=intl +units=m +no_defs "
   )
 
@@ -120,8 +126,11 @@ for (i in 1:nrow(lineas))
   paradas_candidatas <-
     paradas_candidatas[with(paradas_candidatas, order(-paradas_candidatas$n)), ]
   
-  n_min <- quantile(paradas_candidatas$n)[2]
-  n_exception <- quantile(paradas_candidatas$n)[3]
+  n_min <-
+    as.data.frame(paradas_candidatas) %>% group_by(depto) %>% summarise(n = quantile(n, seq(0, 1, 0.1))[7])
+  n_exception <-
+    as.data.frame(paradas_candidatas) %>% group_by(depto) %>% summarise(n = quantile(n, seq(0, 1, 0.1))[10])
+  
   rows <- nrow(paradas_candidatas)
   eliminadas <- c(0)
   
@@ -132,11 +141,14 @@ for (i in 1:nrow(lineas))
       n_k <- as.data.frame(paradas_candidatas[k,])$n
       for (l in (k + 1):rows)
       {
+        depto_l <- paradas_candidatas[l,]$depto
+        n_exception_l <- n_exception[n_exception == depto_l ,'n']
         if (gDistance(paradas_candidatas[k, ], paradas_candidatas[l, ]) < 70)
         {
           orientacion_l <-
             as.data.frame(paradas_candidatas[l, "orientacion"])$orientacion
-          n_l <- as.data.frame(paradas_candidatas[l,])$n
+          
+          
           if (!(as.data.frame(paradas_candidatas)[k, "id"] %in% eliminadas))
           {
             if ((orientacion_k == 'O' &
@@ -148,7 +160,7 @@ for (i in 1:nrow(lineas))
                 (orientacion_k == 'S' &
                  orientacion_l != 'N'))
             {
-              if ((n_l > n_exception) == FALSE)
+              if ((n_l > n_exception_l) == FALSE)
               {
                 eliminadas <-
                   rbind(eliminadas,
@@ -166,7 +178,7 @@ for (i in 1:nrow(lineas))
         paradas_candidatas[!(paradas_candidatas$id %in% eliminadas$id), ]
       
       paradas_filtradas <-
-        as.data.frame(paradas_filtradas) %>% filter(n > n_min)
+        as.data.frame(paradas_filtradas) %>% filter(n > n_min[n_min$depto == depto_l, "n"])
       
       paradas_limpias <-
         rbind(paradas_limpias, paradas_filtradas)
@@ -177,7 +189,7 @@ for (i in 1:nrow(lineas))
       paradas_filtradas <- paradas_candidatas
       
       paradas_filtradas <-
-        as.data.frame(paradas_filtradas) %>% filter(n > n_min)
+        as.data.frame(paradas_filtradas) %>% filter(n > n_min[n_min$depto == depto_l, "n"])
       
       paradas_limpias <-
         rbind(paradas_limpias, paradas_filtradas)
@@ -185,7 +197,10 @@ for (i in 1:nrow(lineas))
   }
 }
 
-write.csv(paradas_limpias_final, file = "/home/innovacion/paradas_limpias_final.csv", sep = ";")
+write.csv(paradas_limpias, file = "/home/innovacion/paradas_limpias_final_metodo_2.csv", sep = ";")
+
+paradas_limpias %>% group_by(linea) %>% summarise(n = n()) %>%  arrange(desc(n))
+
 
 #### Apéndice ETL
 
