@@ -1,0 +1,189 @@
+
+
+---
+title: "Matriz OD"
+author: "SSTYT"
+date: "24/4/2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+rm(list = ls())
+knitr::opts_chunk$set(echo = TRUE)
+library("knitr")
+library(RPostgreSQL) #Para establecer la conexión
+library(data.table)
+library(dplyr)
+library(spatstat)
+library(rgeos) #Para usar gDistance()
+library(sp)
+library(rgdal) #Para poder establecer proyecciones
+library(postGIStools)
+library(sqldf)
+library(ggmap)
+library(geomnet)
+
+
+pw <- {
+  "postgres"
+}
+
+# loads the PostgreSQL driver
+drv <- dbDriver("PostgreSQL")
+# creates a connection to the postgres database
+# note that "con" will be used later in each connection to the database
+con <- dbConnect(
+  drv,
+  dbname = "sube",
+  host = "10.78.14.54",
+  port = 5432,
+  user = "postgres",
+  password = pw
+)
+
+options(sqldf.driver = "SQLite")
+
+```
+
+## Introducción
+
+En el presente informe se analiza la perspectiva de un metrobús transversal en la Ciudad Autónoma de Buenos Aires.
+Para ello se generó una matriz Origen-Destino de viajes en transporte público con datos de SUBE del 4 de mayo de 2016, que tienen origen, destino u ambas en la zona que nos fue solicitada. Se consideraron sólo las transacciones en colectivo o subte.
+
+```{r caracterizacion_dia, include=FALSE}
+tripnet <- read.csv("/home/innovacion/tripnet_viajes.csv")
+ranking_atractores <- tripnet %>% group_by(to_id) %>% summarise(n = sum(q_viajes_exp))
+
+ranking_atractores <- ranking_atractores[with(ranking_atractores, order(-n)), ]
+
+ranking_generadores <- tripnet %>% group_by(from_id) %>% summarise(n = sum(q_viajes_exp))
+
+ranking_generadores <- ranking_generadores[with(ranking_generadores, order(-n)), ]
+
+posibles_pares <- dbGetQuery(
+  con,
+  "select distinct a.id as id_a, b.id as id_b from
+  (select distinct id from matriz_od.zonas) a,
+  (select distinct id from matriz_od.zonas) b
+  where b.id>a.id
+  and (a.id in (select distinct id from informacion_geografica.zonificacion_para_mtb_transversal) or
+  b.id in (select distinct id from informacion_geografica.zonificacion_para_mtb_transversal))"
+  )
+  
+pares_q <- sqldf("select id_a, id_b, sum(q_viajes_exp) as q_viajes
+      from posibles_pares a
+inner join tripnet b
+      on (a.id_a = b.from_id and a.id_b = b.to_id) OR (a.id_a = b.to_id and a.id_b = b.from_id)
+group by id_a, id_b")
+
+
+pares_q <- pares_q[with(pares_q, order(-q_viajes)),]
+
+rownames(pares_q) <- NULL
+
+principales_nodos <- merge(x = ranking_generadores, y = ranking_atractores, by.x = "from_id", by.y = "to_id", all = TRUE)
+
+principales_nodos[is.na(principales_nodos$n.x), 'n.x'] <- 0
+
+principales_nodos[is.na(principales_nodos$n.y), 'n.y'] <- 0
+
+principales_nodos$n_total <-principales_nodos$n.x + principales_nodos$n.y
+
+colnames(principales_nodos)[1] <- 'id'
+
+principales_nodos <- principales_nodos[with(principales_nodos, order(-n_total)),]
+
+```
+
+## Mapa de Matríz OD
+
+Se presenta a continuación un mapa de los flujos obtenidos en la matriz Origen-Destino.
+El ancho de las líneas representa cuánta gente se mueve entre los nodos, cuanto mayor el ancho, mayor es la cantidad de gente que se translada entre los nodos.
+Por otra parte, el color de los nodos representa cuánta gente atrae ese nodo, cuanto más verde es, más gente se dirige hacia allí.
+
+```{r graf_od, echo = FALSE, message=FALSE, warning=FALSE, out.height= "600px"}
+map <- get_map(location = c("long" = -58.416212, "lat" = -34.631330), zoom = 12, maptype = 'terrain')
+
+ggmap(map) + geom_net(
+  data = tripnet,
+  layout.alg = NULL,
+  singletons = FALSE,
+  labelon = FALSE,
+  selfloops = FALSE,
+  vjust = -0.5,
+  ealpha = 0.5,
+  ecolour = 'grey40',
+  arrow = TRUE,
+  aes(
+    from_id = from_id,
+    to_id = to_id,
+    x = long ,
+    y =  lat,
+    colour = grupo,
+    linewidth = (q_viajes**2)/11000 )) +scale_color_brewer(palette = 2, na.value = 'grey40')+  theme_net() %+replace% theme(aspect.ratio =NULL, legend.position = "bottom") +  coord_map()
+```
+
+\newpage
+##  Principales pares OD
+
+A partir de esta información, se pueden obtener los pares con más flujos entre sí.
+```{r, echo=FALSE}
+
+kable(head(pares_q,10), align = 'lc', caption = "Ranking pares")
+
+
+```
+
+A continuación, presentamos un mapa que representa los principales pares:
+```{r , echo=FALSE, message=FALSE, warning=FALSE, out.height= "600px"}
+map <- get_map(location = c("long" = -58.416212, "lat" = -34.631330), zoom = 12, maptype = 'terrain')
+
+ranking_pares <- head(pares_q,5)
+tripnet2 <- tripnet %>% filter((from_id %in% ranking_pares$id_a | from_id %in% ranking_pares$id_b)  & (to_id %in% ranking_pares$id_a | to_id %in% ranking_pares$id_b))
+
+ggmap(map) + geom_net(
+  data = tripnet2,
+  layout.alg = NULL,
+  singletons = FALSE,
+  labelon = FALSE,
+  selfloops = FALSE,
+  vjust = -0.5,
+  ealpha = 0.5,
+  ecolour = 'grey40',
+  arrow = TRUE,
+  aes(
+    from_id = from_id,
+    to_id = to_id,
+    x = long ,
+    y =  lat,
+    colour = grupo,
+    linewidth = (q_viajes**2)/11000 )) +  theme_net() %+replace% theme(aspect.ratio =NULL, legend.position = "bottom") +  coord_map()
+```
+\newpage
+
+##  Principales centros de atracción de viajes
+
+```{r tablas_atracción, echo=FALSE}
+
+kable(head(round(ranking_atractores),10), align = 'lc', caption = "Ranking_atractores")
+
+```
+
+
+```{r, out.width = "400px", out.height= "400px", echo = FALSE}
+knitr::include_graphics("/home/lcordoba/Documentos/atractores.png")
+```
+\newpage
+
+## Principales centros de generación de viajes
+
+```{r tablas_generación, echo=FALSE}
+
+kable(head(round(ranking_generadores),10), align = 'lc', caption = "Ranking_generadores")
+
+```
+
+```{r, out.width = "400px", out.height= "400px", echo = FALSE}
+knitr::include_graphics("/home/lcordoba/Documentos/generadores.png")
+```
+
