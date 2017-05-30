@@ -1,0 +1,343 @@
+---
+title: "Flores: San Pedrito"
+author: 'SSTYTRA: Área de Explotación de Datos'
+date: "25 de abril de 2017"
+output: pdf_document
+---
+```{r param, include=FALSE}
+#Nombre de la tabla del shape del CTB
+shp <- "informacion_geografica.flores_2"
+
+#Nombre de la tabla de movimientos y gps
+gps_mov <- "gps_mov.a2016_05_04"
+
+#Nombre de la tabla de la poblacion
+mov_total <- "mov_dw.a2016_05_4"
+
+#Nombre de la geom del shape
+geom_shp <- "geom"
+
+#Nombre de la geom de la tabla de movimientos y gps
+geom_gps_mov <- "geom_ant"
+
+#Metros del buffer
+buffer <- 0
+
+#Nombre de la geom del shape con buffer
+geom_buffer <- paste("geom_buffer_", buffer, sep = '')
+
+#Día inicio del analisis
+dia_init <- 4
+
+#Dia final del análisis
+dia_fin <- 4
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library("knitr")
+library("dplyr")
+library("ggplot2")
+library("sqldf")
+library("data.table")
+```
+
+```{r postgres conn, include=FALSE}
+
+options(sqldf.RPostgreSQL.user = "postgres",
+        sqldf.RPostgreSQL.password = "123456",
+        sqldf.RPostgreSQL.dbname = "sube",
+        sqldf.RPostgreSQL.host = "10.78.14.54",
+        sqldf.RPostgreSQL.port = 5432)
+
+
+```
+
+```{r ponderador, include=FALSE}
+# Ponderador
+
+# N muestra
+n_muestra <- sqldf(paste("SELECT COUNT(1) FROM ",gps_mov , " WHERE modo = 'BUS' AND diferencia_tiempo_anterior <= 10 OR diferencia_tiempo_siguiente <= 10" , sep = ""), drv = "PostgreSQL")
+
+#N poblacional
+n_poblacional <- sqldf(paste("SELECT COUNT(1) FROM ",mov_total, " WHERE modo = 'BUS' " , sep = ""), drv = "PostgreSQL")
+
+#Ponderador
+ponderador <- as.integer(n_poblacional / n_muestra)
+
+```
+
+```{r shape setup, include= FALSE}
+#Sólo usar si hay que crear un buffer y un índice geográfico en el buffer
+
+#sqldf(paste("alter table ", shp, " add column ",  geom_buffer, " public.geometry ;", sep = ''   ), drv = "PostgreSQL")
+
+#sqldf(paste("update ", shp, " set ",  geom_buffer, " = st_buffer(", geom_shp, "::geography, ", buffer, " )::geometry ;", sep = ''   ), drv = "PostgreSQL", sep = '')
+
+#sqldf(paste("CREATE INDEX idx_", shp, "_", geom_buffer, " ON ", shp, " USING gist (", geom_buffer, ")", sep = ''   ), drv = "PostgreSQL", sep = '')
+```
+
+```{r extraccion, include= FALSE}
+#Usar geom_shp o geom_buffer según corresponda
+#Agregar las columnas de la tabla del shape que sean necesarias.
+
+base <- sqldf(paste("SELECT nro_tarjeta, codigo_contrato, saldo, categoria, modo, desc_linea, interno ,nro_viaje, etapa_viaje, d, h, velocity_anterior, velocity_siguiente, a.geom_ant FROM ", gps_mov," a, ", shp, " b ",
+                    " WHERE a.d BETWEEN ", dia_init, " AND ", dia_fin,
+                    " AND (( modo = 'BUS' AND diferencia_tiempo_anterior <= 10 OR diferencia_tiempo_siguiente <= 10) OR (modo = 'SUBTE') OR (modo = 'TREN')) AND a.",geom_gps_mov," && b.", geom_shp, " AND ST_DISTANCE(a.",geom_gps_mov," , b.", geom_shp, " ) = 0 ;", sep = ""), drv = "PostgreSQL")
+
+base2 <- sqldf(paste("SELECT nro_tarjeta, codigo_contrato, saldo, categoria, modo, desc_linea, interno ,nro_viaje, etapa_viaje, d, h FROM ",  mov_total, " a WHERE a.d BETWEEN ", dia_init, " AND ", dia_fin," AND ( modo = 'BUS'  OR modo = 'SUBTE' OR modo = 'TREN') ;", sep = ""), drv = "PostgreSQL")
+```
+
+```{r queries_string, include=FALSE}
+# En cada caso hay que extrapolar
+
+# 1- Cantidad de transacciones, cantidad de transacciones en subte, en colectivo y tren
+q_trax_modo <- count(base, modo, categoria)
+q_trax_modo <- as.data.table(q_trax_modo)
+q_trax_modo[, total_extrapolado := ifelse(modo == 'BUS' , n * ponderador, n)]
+# Total de transacciones
+sum_trax <- sum(q_trax_modo$total_extrapolado)
+# Tabla con porcentajes
+q_trax_modo$porc <- round((q_trax_modo$total_extrapolado / sum_trax)*100, 2)
+
+# 2- Cantidad de transbordos, cantidad de transbordos en subte, en colectivo y en tren
+q_trb_modo <- filter(base, base$etapa_viaje > 1) %>% count(., modo, categoria)
+q_trb_modo <- as.data.table(q_trb_modo)
+q_trb_modo[, total_extrapolado := ifelse(modo == 'BUS' , n * ponderador, n)]
+# Suma y procentaje transbordos
+sum_trb <- sum(q_trb_modo$total_extrapolado)
+porc_trb <- round((sum_trb/sum_trax)*100, 2)
+# Tabla con porcentajes
+q_trb_modo$porc <- round((q_trb_modo$total_extrapolado / sum_trb)*100, 2)
+
+# 3- TRX por hora por modo
+q_trax_hora <- count(base, modo, h)
+q_trax_hora <- as.data.table(q_trax_hora)
+q_trax_hora[, total_extrapolado := ifelse(modo == 'BUS' , n * ponderador, n)]
+
+# 4- TRX totales por hora
+q_trax_hora_ttl <- summarise(group_by(q_trax_hora, h), sum(total_extrapolado))
+
+# 5- TRB por hora
+q_trb_hora <- filter(base, base$etapa_viaje > 1) %>% count(., modo, h)
+q_trb_hora <- as.data.table(q_trb_hora)
+q_trb_hora[, total_extrapolado := ifelse(modo == 'BUS' , n * ponderador, n)]
+
+# 6- TRB totales por hora
+q_trb_hora_ttl <- summarise(group_by(q_trb_hora, h), sum(total_extrapolado))
+
+# 7- TRX por linea
+q_trx_linea <- count(filter(base, base$modo == "BUS"), desc_linea)
+q_trx_linea$total_extrapolado <- q_trx_linea$n * ponderador
+# Total trx en bus
+sum_trx_bus <- sum(q_trx_linea$total_extrapolado)
+# Ordeno la tabla de lineas de colectivos 
+q_trx_linea <- q_trx_linea[order(q_trx_linea$total_extrapolado, decreasing = TRUE), c(1,3)]
+# Porcentaje respecto al total de transacciones
+q_trx_linea$porc_trx <- round((q_trx_linea$total_extrapolado / sum_trax)*100, 2)
+# Porcentaje respecto al total de transacciones en colectivo
+q_trx_linea$porc_trx_bus <- round((q_trx_linea$total_extrapolado / sum_trx_bus)*100, 2)
+
+# 8- TRB por linea
+q_trb_linea <- count(filter(base, base$modo == "BUS", base$etapa_viaje > 1), desc_linea)
+q_trb_linea$total_extrapolado <- q_trb_linea$n * ponderador
+# Total trb en bus
+sum_trb_bus <- sum(q_trb_linea$total_extrapolado)
+# Ordeno la tabla de líneas de colectivos
+q_trb_linea <- q_trb_linea[order(q_trb_linea$total_extrapolado, decreasing = TRUE), c(1,3)]
+# Porcentaje respecto al total de transbordos
+q_trb_linea$porc_trb <- round((q_trb_linea$total_extrapolado / sum_trb)*100, 2)
+# Porcentaje respecto al total de transbordos en colectivo
+q_trb_linea$porc_trb_bus <- round((q_trb_linea$total_extrapolado / sum_trb_bus)*100, 2)
+
+# 9- TRX por hora, bus
+q_trx_bus_h <- count(filter(base, base$modo == "BUS"), h)
+q_trx_bus_h$total_extrapolado <- q_trx_bus_h$n * ponderador
+
+# 10- TRX por hora, tren
+q_trx_tren_h <- count(filter(base, base$modo == "TREN"), h)
+
+# 11- TRX por hora, subte
+q_trx_subte_h <- count(filter(base, base$modo == "SUBTE"), h)
+
+# 12- velocidad por hora
+q_vel_hora <- summarise(group_by(filter(base, base$modo == "BUS"), h), mean(velocity_anterior))
+
+# 13-  Matriz de transbordos entre modos
+# Me quedo con los nro_viajes que son de una etapa mayor a 1
+viajes_mas_1etapa <- filter(base, base$etapa_viaje > 1)
+# Joineo con la etapa de viaje previa en la base total
+trb_modos <- left_join(viajes_mas_1etapa, base2, by = "nro_viaje") %>% filter(., etapa_viaje.y == etapa_viaje.x - 1)
+# Armo la tabla de transbordos
+tabla_trb <- table(trb_modos$modo.y, trb_modos$modo.x)
+# Multiplico por el ponderador a aquellos viajes cuya etapa siguiente es en colectivo
+tabla_trb[,1] <- tabla_trb[,1] * ponderador
+# Creo un dataframe para los gráficos
+tabla_trb_df <- as.data.frame(tabla_trb)
+# Armo la tabla con datos porcentuales
+tabla_trb_porc <- round((tabla_trb/sum_trb)*100, 2) 
+
+# 14- Análisis especial para Flores
+# Filtro los viajes de la forma colectivo-subte
+trb_bus_subte <- filter(trb_modos, trb_modos$modo.y == "BUS", trb_modos$modo.x == "SUBTE")
+# Me quedo con el nro de tarjeta, el modo (bus) y la línea
+trb_bus_subte <- trb_bus_subte[,c(grep("nro_tarjeta.x", colnames(trb_bus_subte)), grep("modo.y", colnames(trb_bus_subte)), grep("desc_linea.y", colnames(trb_bus_subte)))]
+# Cuento las transacciones 
+trb_bus_subte <- count(trb_bus_subte, desc_linea.y)
+# Suma del total de transacciones
+sum_trb_bus_subte <- sum(trb_bus_subte$n)
+trb_bus_subte <- as.data.table(trb_bus_subte)
+# Ordeno la tabla 
+trb_bus_subte_ord <- trb_bus_subte[order(trb_bus_subte$n, decreasing = TRUE),]
+# Agrego la columna de porcentaje
+trb_bus_subte_ord$porc <- round((trb_bus_subte_ord$n/sum_trb_bus_subte)*100, 2) 
+
+# 15- Analisis transbordos linea a linea
+# Filtro los viajes que presenta un par de etapas colectivo-colectivo
+trb_bus_bus <- filter(trb_modos, trb_modos$modo.y == "BUS", trb_modos$modo.x == "BUS") 
+# Expando usando el ponderador
+trb_bus_bus <- as.data.frame(table(trb_bus_bus$desc_linea.y, trb_bus_bus$desc_linea.x) * ponderador)
+# Ordeno los pares de líneas
+trb_bus_bus_ord <- trb_bus_bus[order(trb_bus_bus$Freq, decreasing = TRUE),]
+```
+Análisis para la zona del barrio de Flores que incluye la estación de subterráneo "San Pedrito" de la Línea A. El análisis se ha realizado utilizando el día 4 de mayo de 2016.
+
+Debe advertirse que los dos poligonos facilitados para el análisis presentan una pequeña área de intersección entre sí.
+
+Los números correspondientes a las transacciones realizadas en colectivo han sido extrapoladas usando un factor de ponderación sobre aquellas transacciones que se podían localizar correctamente en la zona de análisis requerida. Las transacciones correspondientes a subterráneo y tren no han sido modificadas por ninguna metodología. 
+
+## Transacciones
+
+En el entorno seleccionado se realizan `r sum_trax` transacciones en el día.
+En la tabla 1 y el gráfico siguiente se presenta el número de transaciones realizadas en los distintos modos. 
+
+```{r transacciones tabla, echo= FALSE}
+# Tabla transacciones por modo
+kable(q_trax_modo[,c(1,2,4,5)], col.names = c("Modo", "Categoría", "Total extrapolado", "Porcentaje"), align = 'llrr', caption = "Transacciones")
+```
+
+```{r transacciones gráfico, echo = FALSE}
+# Gráfico transacciones por modo
+ggplot(q_trax_modo, aes(x = modo, y = total_extrapolado)) + theme_classic() + geom_bar(stat="identity", aes(fill = modo), size = 1)+ theme(axis.text.x = element_text(angle=0), panel.grid.major.y = element_line(colour = "slategrey")) + labs(title="Transacciones", x= "", y = "") + scale_fill_brewer(palette = "Set1") + guides(fill=FALSE) + scale_y_continuous(breaks = c(5000,10000,15000,20000,25000,30000))
+```
+
+Puede observarse que el 60% de las transacciones se realizan en subte. En los gráficos siguientes se tienen la distribución horaria de las transacciones en total y discriminada en los distintos modos de transporte.
+
+```{r transacciones hora, echo = FALSE}
+# Gráfico transacciones perfil horario
+ggplot(q_trax_hora_ttl, aes(x = h, y = q_trax_hora_ttl$`sum(total_extrapolado)`)) + theme_classic() + geom_line(size = 1.5) + theme(axis.text.x = element_text(angle=0), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Perfil horario: Transacciones", x= "Hora", y = "") + scale_colour_brewer(palette = "Set1") + scale_x_continuous(breaks= c(0:23))
+
+# Gráfico transacciones modos perfil horario
+ggplot(q_trax_hora, aes(x = h, y = total_extrapolado)) + theme_classic() + geom_line(aes(colour = modo), size = 1.5) + theme(axis.text.x = element_text(angle=0), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Perfil horario: Transacciones por modo", x= "Hora", y = "", colour = "Modo") + scale_colour_brewer(palette = "Set1") + scale_x_continuous(breaks= c(0:23))
+```
+
+Se observa el mayor pico de las transacciones en la zona a las 8 hs. La gran mayoría de estas transacciones se realizan en subterráneo. 
+En el resto del día se observan dos picos mucho menores al de la mañana, uno sucede al mediodía (12 hs) y el otro a la tarde (17 hs)
+El colectivo presenta una tendencia más estable que el subterráneo con un pico al mediodía y otro a la tarde. La máxima cantidad de transacciones en colectivo sucede entre las 17 y 19 hs, donde se observa el segundo pico del día. 
+
+En la tabla 2 se presentan las 10 líneas de colectivos con mayor cantidad de transacciones en la zona. Además del número absoluto se muestra el porcentaje que representan las transacciones en dichas líneas respecto al total de transacciones y respecto al total de transacciones en colectivo.
+
+```{r lineas trx, echo= FALSE}
+# Tabla top líneas colectivos
+kable(head(q_trx_linea, n= 10),  col.names = c("Línea", "Total extrapolado", "Respecto total transac. (%)", "Respecto total transac.bus (%)"), align = 'lrrr', caption = "Líneas con mayor cantidad de transacciones")
+```
+
+
+## Transbordos
+
+En el entorno seleccionado se realizan `r sum_trb` transbordos en el día. Los mismos representan el `r porc_trb` % de las transacciones.
+En la tabla 3 y el gráfico siguiente se presenta el número de transbordos discriminados por modo. 
+
+```{r transbordos, echo= FALSE}
+# Tabla transbordos por modo
+kable(q_trb_modo[,c(1,2,4,5)], col.names = c("Modo", "Categoría", "Total extrapolado", "Porcentaje"), align = 'llrr', caption = "Transbordos")
+
+# Gráfico transbordos por modo
+ggplot(q_trb_modo, aes(x = modo, y = total_extrapolado)) + theme_classic() + geom_bar(stat="identity", aes(fill = modo), size = 1)+ theme(axis.text.x = element_text(angle=0), panel.grid.major.y = element_line(colour = "slategrey")) + labs(title="Transbordos", x= "", y = "", colour = "Modo") + scale_fill_brewer(palette = "Set1") + guides(fill= FALSE)
+```
+
+Puede observarse que en comparación con la tabla 1 existe un incremento en el porcentaje de participación del subterráneo. En los gráficos siguientes se tienen la distribución horaria de los transbordos en total y discriminada en los distintos modos de transporte.
+
+```{r transbordos perfil horario}
+# Gráfico transbordos perfil horario
+ggplot(q_trb_hora_ttl, aes(x = h, y = q_trb_hora_ttl$`sum(total_extrapolado)`)) + theme_classic() + geom_line(size = 1.5) + theme(axis.text.x = element_text(angle=0), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Perfil horario: Transbordos", x= "Hora", y = "") + scale_colour_brewer(palette = "Set1") + scale_x_continuous(breaks= c(0:23))
+
+# Gráfico transbordos modos perfil horario
+ggplot(q_trb_hora, aes(x = h, y = total_extrapolado)) + theme_classic() + geom_line(aes(colour = modo), size = 1.5) + theme(axis.text.x = element_text(angle=0),panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Perfil horario: Transbordos por modo", x= "Hora", y = "", colour = "Modo") + scale_colour_brewer(palette = "Set1") + scale_x_continuous(breaks= c(0:23)) + scale_y_continuous(breaks=c(500,1000,1500,2000, 2500))
+```
+
+En el gráfico se observa un comportamiento bastante similar al comportamiento horario de las transacciones.
+Durante la hora pico de la mañana (8 hs) el subterráneo es el modo que presenta la mayor cantidad de transbordos, mientras que el número de transbordos en colectivo se encuentra muy por debajo para dicho horario. 
+El colectivo presenta un compartamiento bastante estable y de una magnitud baja. El pico de la tarde se encuentra a las 19 hs.
+
+En la tabla 4 se presentan las 10 líneas de colectivos con mayor cantidad de transbordos en la zona. Además del número absoluto se muestra el porcentaje que representan los transbordos en dichas líneas respecto al total de transbordos y respecto al total de transbordos en colectivo.
+
+```{r lineas transbordos, echo= FALSE}
+# Tabla top líneas colectivos transbordos
+kable(head(q_trb_linea, n= 10),  col.names = c("Línea", "Total extrapolado", "Respecto total transb. (%)", "Respecto total de transb. bus(%)"), align = 'lrrr', caption = "Líneas con mayor cantidad de transbordos")
+```
+
+Comparando esta tabla con la tabla 2 se puede observar que las líneas 63, 113 y 55 se mantienen en los tres primeros lugares de ambas listas. Nueve de las 10 líneas que tienen un alta cantidad de transacciones también presentan una alta cantidad de transbordos; sin embargo en la mayoría de los casos, no se encuentran en la misma posición en la tabla 2 y en la tabla 4. La línea 141 figura en la tabla 2 pero no aparece en la tabla 4, mientras que sucede lo contrario con la línea 8.
+
+En la tabla 5 se presenta la matriz de transbordos entre modos. Las filas presentan el modo de la etapa anterior y en las columnas los modos de la etapa siguiente. En la tabla 6 se presenta la misma información pero de manera porcentual.
+
+```{r matriz modos, echo= FALSE}
+# Matriz transbordos entre modos
+kable(tabla_trb, caption = "Matriz de transbordos entre modos")
+
+# Matriz transbordos entre modos (porcentaje)
+kable(tabla_trb_porc, caption = "Matriz de transbordos entre modos (porcentajes)")
+```
+
+Se observa que el 67% de los transbordos son colectivo-subte. Luego, pero en una cuantía mucho menor, siguen los transbordos colectivo-colectivo y subte-colectivo.
+
+En el gráfico siguiente se vuelca la información de la matriz.
+
+```{r grafico matriz modos, echo= FALSE}
+# Gráfico transbordos entre modos
+ggplot(tabla_trb_df, aes(x = Var2, y = Freq)) + theme_classic() + geom_bar(aes(fill= Var1), stat="identity", size = 1, position = "dodge") + theme(axis.text.x = element_text(angle=0), panel.grid.major.y = element_line(colour = "slategrey")) + labs(title="Matriz de transbordos entre modos", x= "Modo etapa siguiente", y = "", fill = "Modo etapa anterior") + scale_fill_brewer(palette = "Set1")
+```
+
+## Análisis específicos para el caso
+
+A efectos de comparar con los datos del informe realizado para la zona de Estación Flores, en la tabla 7 se presentan los 20 pares de líneas que presentan la mayor cantidad de transbordos. Los números deben analizarse con cuidado ya que al trabajar con datos muestrales expandidos pueden existir diferencias de magnitud que no se ven reflejadas en el presente cuadro. Por lo tanto, la interpretación debe realizarse respecto al orden presentado más que a los números en sí.
+
+```{r top pares líneas transbordos, echo = FALSE}
+# Tabla top transbordos bus-bus
+kable(head(trb_bus_bus_ord, n= 20),  col.names = c("Línea etapa anterior", "Línea etapa siguiente", "Total extrapolado"), row.names = FALSE, align = 'llr', caption = "Pares de líneas con mayor cantidad de transbordos colectivo-colectivo")
+```
+
+
+Puede observarse que la línea 63 es las que más veces aparece como etapa siguiente en los transbordos colectivo-colectivo (dato que ya se podía inferir de la tabla 4).
+
+Por el alto porcentaje de transbordos colectivo-subterráneo se analizaron cuales son las líneas más utilizadas para transbordar al subterráneo. Se presentan las diez líneas con mayor cantidad de transacciones en los transbordos colectivo-subte en la tabla 8.
+
+```{r toplíneas transbordo colectivo-subte, echo = FALSE}
+# Tabla top transbordos bus-subte
+kable(head(trb_bus_subte_ord, n= 10),  col.names = c("Línea etapa anterior", "Transacciones", "Porcentaje"), row.names = FALSE, align = 'lrr', caption = "Líneas más utilizada en el etapa anterior en los transbordos colectivo-subte")
+```
+
+El porcentaje es respecto al total de los transbordos colectivo-subte (12464).
+
+Considerando los transbordos colectivo-subte se observa que permanecen ocho líneas de las que aparecían en la tabla de líneas con mayor cantidad de transbordos (tabla 4) aunque con cambios en la posición que ocupan. Lo notable es que aparecen la línea 85  en la segunda posición y la línea 92 en octava posición. Esto parece indicar que son líneas que son muy utilizadas para transbordar al subterráneo.
+
+## Conclusiones
+
+En base al análisis realizado se realizan las siguientes conclusiones:
+
+* La mayoría de las transacciones (60%) y de los transbordos (67%) se realizan en subte
+
+* Se observa un claro pico en las transacciones por la mañana (8 hs). Existen dos picos menores: uno al mediodía (12 hs) y otro a la tarde (17hs)
+
+* Se observa un pico en los transbordos por la mañana (8 hs). El resto del día los transbordos presentan un comportamiento estable.
+
+* El subterráneo presenta un marcado perfil horario donde la mayor parte de las transacciones y transbordos suceden durante la hora pico de la mañana. En lo que resta del día tanto transacciones como transbordos decaen fuertemente
+
+* El colectivo representa un porcentaje menor de las transacciones y transbordos. El perfil horario de las transacciones y transbordos es bastante estable aunque con un pico por la tarde.
+
+* Analizando los transbordos entre modos se ve que la gran mayoría de los transbordos son colectivo-subte (67%), seguido por colectivo-colectivo (17%) y subte-colectivo (14.5%)
+
+* Se puede observar que tanto en transacciones como en transbordos las líneas 63, 113 y 55 ocupan un rol muy importante en la zona.
+
+* Considerando los transbordos colectivo-subte, se observa que aparecen 8 de las 10 líneas con mayor cantidad de transbordos. Sin embargo, en este análisis aparecen las líneas 85 y 92, siendo que no aparecían en el ranking de líneas con mayor cantidad de transbordos. Estos datos parecen indicar un comportamiento un tanto distinto de la gente que se toma un colectivo para continuar su viaje en el subterrańeo.

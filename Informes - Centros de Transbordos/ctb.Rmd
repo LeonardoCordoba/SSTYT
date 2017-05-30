@@ -1,0 +1,154 @@
+---
+title: "Centro de Transbordo"
+author: "SSTYT"
+date: "28/3/2017"
+output: html_document
+---
+```{r param, include=FALSE}
+#Nombre de la tabla del shape del CTB
+shp <- "informacion_geografica.bulbos_2017"
+
+#Nombre de la tabla de movimientos y gps
+gps_mov <- "gps_mov.a2016_05_4"
+
+#Nombre de la tabla de la poblacion
+mov_total <- "mov_dw.a2016_05_4"
+
+#Nombre de la geom del shape
+geom_shp <- "geom"
+
+#Nombre de la geom de la tabla de movimientos y gps
+geom_gps_mov <- "geom_ant"
+
+#Metros del buffer
+buffer <- 50
+
+#Nombre de la geom del shape con buffer
+geom_buffer <- paste("geom_buffer_", buffer, sep = '')
+
+#Día inicio del analisis
+dia_init <- 4
+
+#Dia final del análisis
+dia_fin <- 5
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library("knitr")
+library("dplyr")
+library("ggplot2")
+library("sqldf")
+```
+
+```{r postgres conn, include=FALSE}
+
+options(sqldf.RPostgreSQL.user = "postgres",
+        sqldf.RPostgreSQL.password = "123456",
+        sqldf.RPostgreSQL.dbname = "sube",
+        sqldf.RPostgreSQL.host = "10.78.10.215",
+        sqldf.RPostgreSQL.port = 5432)
+
+
+```
+
+```{r ponderador, include=FALSE}
+# Ponderador
+
+# N muestra
+n_muestra <- sqldf(paste("SELECT COUNT(1) FROM ",gps_mov , " WHERE diferencia_tiempo_anterior <= 10 OR diferencia_tiempo_siguiente <= 10" , sep = ""), drv = "PostgreSQL")
+
+#N poblacional
+n_poblacional <- sqldf(paste("SELECT COUNT(1) FROM ",mov_total, " WHERE modo = 'BUS' " , sep = ""), drv = "PostgreSQL")
+
+#Ponderador
+ponderador <- n_poblacional / n_muestra
+
+```
+
+```{r shape setup, include= FALSE}
+#Sólo usar si hay que crear un buffer y un índice geográfico en el buffer
+
+#sqldf(paste("alter table ", shp, " add column ",  geom_buffer, " public.geometry ;", sep = ''   ), drv = "PostgreSQL")
+
+#sqldf(paste("update ", shp, " set ",  geom_buffer, " = st_buffer(", geom_shp, "::geography, ", buffer, " )::geometry ;", sep = ''   ), drv = "PostgreSQL", sep = '')
+
+#sqldf(paste("CREATE INDEX idx_", shp, "_", geom_buffer, " ON ", shp, " USING gist (", geom_buffer, ")", sep = ''   ), drv = "PostgreSQL", sep = '')
+```
+
+```{r extraccion, include= FALSE}
+#Usar geom_shp o geom_buffer según corresponda
+#Agregar las columnas de la tabla del shape que sean necesarias.
+
+base <- sqldf(paste("SELECT nro_tarjeta, codigo_contrato, saldo, categoria, modo, desc_linea, interno ,nro_viaje, etapa_viaje, d, h, velocity_anterior, velocity_siguiente, a.geom_ant, b.arteria, b.intersecci FROM ", gps_mov," a, ", shp, " b ",
+                     " WHERE a.d BETWEEN ", dia_init, " AND ", dia_fin,
+                     " AND (diferencia_tiempo_anterior <= 10 OR diferencia_tiempo_siguiente <= 10) AND a.",geom_gps_mov," && b.", geom_buffer, " AND ST_DISTANCE(a.",geom_gps_mov," , b.", geom_buffer, " ) = 0 ;", sep = ""), drv = "PostgreSQL")
+```
+
+```{r queries_string, include=FALSE}
+# En cada caso hay que extrapolar
+# Cantidad de transacciones, cantidad de transacciones en subte, en colectivo y tren
+q1 <- count(base, intersecci)
+q1$total_extrapolado <- q1$n * as.integer(ponderador)
+
+
+# Cantidad de transbordos, cantidad de transbordos en subte, en colectivo y en tren
+q2 <- filter(base, base$etapa_viaje > 1) %>% count(., modo)
+q2$total_extrapolado <- q2$n * as.integer(ponderador)
+
+# TRX por hora
+q3 <- count(base, modo, h)
+q3$total_extrapolado <- q3$n * as.integer(ponderador)
+
+# TB por hora
+q4 <- filter(base, base$etapa_viaje > 1) %>% count(., modo, h)
+q4$total_extrapolado <- q4$n * as.integer(ponderador)
+  
+# TRX por linea
+q5 <- count(filter(base, base$modo == "BUS"), desc_linea)
+q5$total_extrapolado <- q5$n * as.integer(ponderador)
+
+# TRX por hora, bus
+q6 <- count(filter(base, base$modo == "BUS"), h)
+q6$total_extrapolado <- q6$n * as.integer(ponderador)
+
+# TRX por hora, tren
+q7 <- count(filter(base, base$modo == "TREN"), h)
+q7$total_extrapolado <- q7$n * as.integer(ponderador)
+
+# TRX por hora, subte
+q8 <- count(filter(base, base$modo == "SUBTE"), h)
+q8$total_extrapolado <- q8$n * as.integer(ponderador)
+
+# velocidad por hora
+q9 <- summarise(group_by(filter(base, base$modo == "BUS"), h), mean(velocity_anterior))
+
+# transacciones por línea, intersecci
+q10 <- count(base, intersecci, desc_linea)
+q10$total_extrapolado <- q10$n * as.integer(ponderador)
+
+```
+
+## R Markdown
+```{r tablas, echo= FALSE}
+#q1
+kable(q1, col.names = c("intersección", "n", "Total extrapolado"), align = 'lc')
+
+#q
+kable(q10, col.names = c("intersección", "desc_linea","n", "Total extrapolado"), align = 'lc')
+
+```
+
+## Gráficos
+```{r graficos, echo= FALSE}
+#q1
+ggplot(q1, aes(x = intersecci, y = total_extrapolado)) + theme_classic() + geom_point(colour = 'firebrick', size = 2)  + theme(axis.text.x = element_text(angle=90)) 
+
+```
+
+```{r guardar, echo= FALSE}
+write.csv(q1, file = "/home/innovacion/q1.csv", row.names = TRUE)
+write.csv(q10, file = "/home/innovacion/q10.csv", row.names = TRUE)
+
+```

@@ -1,0 +1,116 @@
+---
+title: "Informe Velocidad CABA"
+author: 'SSTYTRA: Área de Explotación de Datos'
+date: "16 de mayo de 2017"
+output:
+  html_document: default
+  pdf_document: default
+header-includes: \usepackage{caption}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library("RODBC")
+library("sqldf")
+library("dplyr")
+library("knitr")
+install.packages('RODBC')
+# Conexión al server
+options(sqldf.RPostgreSQL.user ="postgres",
+        sqldf.RPostgreSQL.password ="123456",
+        sqldf.RPostgreSQL.dbname ="sube",
+        sqldf.RPostgreSQL.host = "10.78.14.54",
+        sqldf.RPostgreSQL.port =5432)
+
+
+```
+
+## 1- Introducción
+
+A partir de los datos GPS de SUBE y la Speed Data adquirida a Nokia Here, ahora podemos realizar análisis de velocidad para colectivos y automóviles en la Ciudad de Buenos Aires.
+
+Presentamos a continuación dos mapas elaborados con esta información para 10 días hábiles del mes de mayo de 2016 a las 9 am.
+
+$$
+{`r setwd("/home/lcordoba/Documentos/Velocidad")`}
+\begin{minipage}[t]{0.48\textwidth}
+\includegraphics[width=\textwidth]{`r getwd()`/9_privado_caba.png}
+\captionof{figure}{Velocidad Media Autos: 9 am}
+\end{minipage}
+\hspace{10px}
+\begin{minipage}[t]{0.5\textwidth}
+\includegraphics[width=\textwidth]{`r getwd()`/9_publico_caba.png}
+\captionof{figure}{Velocidad Media Colectivos: 9 am}
+\end{minipage}
+$$
+
+Con estas imagenes como muestra se puede observar contamos con información considerablemente completa sobre las velocidades de automóviles y colectivos en CABA.
+A grandes rasgos se puede observar:
+
+  1. La información de automóviles es "mayor" que la de colectivos. Los datos de los colectivos se encuentran en aquellas calles donde estos circulan.
+
+  2. Al usar la misma escala para la velocidad en ambos modos se ve que la velocidad de colectivos es menor a la de los automóviles en la mayoría de las calles. 
+
+  3. Más allá de la diferencia de magnitud, en los grandes corredores ambos modos presentan una velocidad promedio elevada.
+  
+  4. En algunos puntos se observa que la velocidad promedio de ambos modos es muy reducida, por ejemplo: Microcentro. Esta información puede considerarse como un posible indicador de la congestión en la zona.
+  
+## 2- Estructura de los datos
+
+Resulta relevante presentar los datos y cómo se encuentran estructurados para cada uno de los modos.
+
+**Automóviles**
+
+Los datos de Nokia Here para velocidad de automóviles comprenden a la Ciudad de Buenos Aires en un año calendario: desde octubre 2015 hasta octubre 2016
+
+La estructura de los datos es:
+
+```{r datos_nokia_1, echo = FALSE}
+
+kable(data.frame( Nombre = c("ID", "Dirección", "Fecha y hora", "Promedio", "Desvío estándar", "Mínimo", "Máximo", "Confianza"), Descripción = c("Identificador del link", "Dirección del viaje", "Año-Mes-Día Hora:Minuto", "Velocidad promedio del link en ese momento", "Desvío estándar de la velocidad promedio del link en ese momento", "Velocidad mínima del link en ese momento", "Velocidad máxima del link en ese momento", "Indicador de la certeza del dato de velocidad"))) 
+```
+
+Considerando las posibles necesidades de las áreas y para facilitar la interpretación de los datos hemos trabajado en métodos para aumentar y mejorar la información provista:
+
+  a. Es posible realizar agrupaciones de los datos sobre velocidad a nivel hora (por día y para un conjunto de días). Esto facilita la interpretación de los datos
+  b. Es posible asociar cada link al nombre de la calle. En una buena proporción de casos es posible asociar la dirección del viaje al sentido de numeración de la calle (creciente o decreciente). Esto es especialmente útil para poder filtrar aquellas calles que cuentan con dos sentidos de circulación en carriles separados.
+  c. Existe más información de la cartografía de Here que se puede añadir en caso de ser necesaria: límites de velocidad, jerarquización vial, etc.
+  
+La tabla que surge de este tipo de trabajo tiene la siguiente estructura:
+
+```{r datos_nokia_2, echo = FALSE}
+
+kable(data.frame( Nombre = c("ID", "Dirección", "Nombre", "Promedio", "Desvío estándar", "Mínimo", "Máximo", "Confianza", "Hora", "Sentido de la calle"), Descripción = c("Identificador del link", "Dirección del viaje", "Nombre de la calle", "Velocidad promedio del link por hora", "Desvío estándar de la velocidad promedio del link por hora", "Velocidad mínima del link por hora", "Velocidad máxima del link por hora", "Promedio del indicador de la certeza del dato de velocidad por hora", "Hora (variable de agrupación)", "Sentido del viaje considerando la numeración de la calle (creciente o decreciente)" ))) 
+```
+
+Este tipo de tabla fue la que utilizamos para realizar el mapa presentado en la primera sección.
+
+**Colectivos**
+
+Actualmente contamos con información de velocidad de colectivos en la base de datos GPS de SUBE, desde mayo a septiembre de 2016. Cada colectivo registra su posición cada 4 minutos.
+
+La estructura (simplificada) de datos es:
+
+```{r datos_sube_1, echo = FALSE}
+
+kable(data.frame( Nombre = c("ID", "Línea", "Interno", "Fecha y hora", "Velocidad", "Posición"), Descripción = c("Identificador del punto GPS", "Línea de colectivo", "Interno de la línea", "Fecha en que se registro el dato GPS", "Velocidad registrada en el instante en que se captó el dato", "Coordenadas del punto GPS, en WGS84"))) 
+```
+
+Con esta información se puede calcular la velocidad promedio por tramo, a partir de ubicar los puntos GPS y calcular un promedio entre los puntos que caen en un mismo tramo. Además, es posible guardar la cantidad de datos que conformaron ese valor, es decir, con qué cantidad de muestra se generó el promedio, para tener una aproximación a la calidad del dato.
+De manera similar, con esta información:
+
+  a. Es posible realizar agrupaciones de los datos sobre velocidad a nivel hora (por día y para un conjunto de días). Esto facilita la interpretación de los datos
+  b. Es posible calcular resultados por calle o avenida.
+  c. De ser necesario se puede calcular la velocidad por orientación, es decir, si la velocidad está calculada con colectivos que se dirigen al 'Sur', 'Norte, 'Este' y 'Oeste'. En este caso no se calcula por el sentido según lo define la numeración.
+  
+La tabla que surge de este tipo de trabajo tiene la siguiente estructura:
+
+```{r datos_nokia_2, echo = FALSE}
+
+kable(data.frame( Nombre = c("ID", "Orientación", "Nombre", "Promedio", "Desvío estándar", "Mínimo", "Máximo","Muestra" , "Hora"), Descripción = c("Identificador del tramo", "Orientación definida como 'Sur', 'Norte, 'Este' y 'Oeste'", "Nombre de la calle", "Velocidad promedio del link por hora", "Desvío estándar de la velocidad promedio del link por hora", "Velocidad mínima del link por hora", "Velocidad máxima del link por hora","Cantidad de puntos GPS que se tomaron como muestra", "Hora (variable de agrupación)"))) 
+```
+
+Este tipo de tabla fue la que utilizamos para realizar el mapa presentado en la primera sección.
+  
+
