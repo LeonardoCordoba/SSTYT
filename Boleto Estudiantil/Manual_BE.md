@@ -29,7 +29,8 @@ CREATE TABLE boleto_estudiantil.liquidacion_año_mes(
 ### Carga al server de la base de datos de la operatoria mensual (terminal)
 
 sudo scp file_path/nombre_archivo.csv innovacion@10.78.14.54:/home/innovacion
-Carga de datos a la tabla (Postgres)
+
+### Carga de datos a la tabla (Postgres)
 
 COPY boleto_estudiantil.liquidacion_año_mes FROM '/home/innovacion/nombre_archivo' DELIMITER ';' CSV HEADER;
 
@@ -46,8 +47,6 @@ Creación columna año de liquidación (Postgres)
 ALTER TABLE boleto_estudiantil.liquidacion_año_mes ADD COLUMN ano_liqui integer
 
 UPDATE boleto_estudiantil.liquidacion_año_mes SET ano_liqui = yyyy WHERE periodo = 'mmyyyy'
-Creación tabla de liquidación mensual de rezagos
-Creación de la tabla mensual rezagos (Postgres)
 
 ## Creación tabla mensual rezagos
 ### Creación de la tabla mensual de rezagos (PostgreSQL)
@@ -69,8 +68,9 @@ CREATE TABLE boleto_estudiantil.liquidacion_año_mes_rezagos(
 sudo scp file_path/nombre_archivo.csv innovacion@10.78.14.54:/home/innovacion
 Carga de datos a la tabla (Postgres)
 
+### Carga de datos a la tabla (Postgres)
+
 COPY boleto_estudiantil.liquidacion_año_mes_rezagos FROM '/home/innovacion/nombre_archivo.csv' DELIMITER ';' CSV HEADER;
-Creación de la columna mes de liquidación (Postgres)
 
 ### Modificaciones de la tabla
 
