@@ -90,6 +90,7 @@ UPDATE boleto_estudiantil.liquidacion_año_mes_rezagos SET ano_liqui = yyyy WHER
 Se deben declarar los nombres de las tablas creadas previamente:
 
 be_nssa <- "boleto_estudiantil.liquidacion_yyyy_mm"
+
 elr <- "tablas_complementarias.elr_yyyy_mm"
 
 Ejecutarlo
