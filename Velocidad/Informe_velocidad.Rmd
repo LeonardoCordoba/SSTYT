@@ -3,27 +3,51 @@ title: "Informe Velocidad CABA"
 author: 'SSTYTRA: Área de Explotación de Datos'
 date: "16 de mayo de 2017"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 header-includes: \usepackage{caption}
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
-library("RODBC")
-library("sqldf")
-library("dplyr")
-library("knitr")
-install.packages('RODBC')
+library(RPostgreSQL)
+library(dplyr)
+library(knitr)
+library(data.table)
+library(tidyverse)
 # Conexión al server
-options(sqldf.RPostgreSQL.user ="postgres",
-        sqldf.RPostgreSQL.password ="123456",
-        sqldf.RPostgreSQL.dbname ="sube",
-        sqldf.RPostgreSQL.host = "10.78.14.54",
-        sqldf.RPostgreSQL.port =5432)
+### BD
+pw <- {
+  "postgres"
+}
 
+# loads the PostgreSQL driver
+drv <- dbDriver("PostgreSQL")
+# creates a connection to the postgres database
+# note that "con" will be used later in each connection to the database
+con_sube <- dbConnect(
+  drv,
+  dbname = "sube",
+  host = "10.78.14.54",
+  port = 5432,
+  user = "postgres",
+  password = pw
+)
 
+con_nokia <- dbConnect(
+  drv,
+  dbname = "here",
+  host = "10.78.14.54",
+  port = 5432,
+  user = "postgres",
+  password = pw
+)
+
+```
+
+```{r carga bd, include=FALSE}
+sube_dt <- as.data.table(dbGetQuery(con_sube,"SELECT * FROM a_carto.velocidades_2016_5"))
+here_dt <- as.data.table(dbGetQuery(con_nokia,"SELECT * FROM originales.speed_caba_05_10dias_agrg"))
 ```
 
 ## 1- Introducción
@@ -31,6 +55,12 @@ options(sqldf.RPostgreSQL.user ="postgres",
 A partir de los datos GPS de SUBE y la Speed Data adquirida a Nokia Here, ahora podemos realizar análisis de velocidad para colectivos y automóviles en la Ciudad de Buenos Aires.
 
 Presentamos a continuación dos mapas elaborados con esta información para 10 días hábiles del mes de mayo de 2016 a las 9 am.
+
+Los links son:
+
+[- Transporte privado](https://sstyt-maps.carto.com/u/sstyt/builder/1057d9b8-3673-11e7-8035-0e8c56e2ffdb/embed) 
+
+[- Transporte público](https://sstyt-maps.carto.com/u/sstyt/builder/5c0c084e-31bd-11e7-9ecf-0e3ff518bd15/embed) 
 
 $$
 {`r setwd("/home/lcordoba/Documentos/Velocidad")`}
@@ -106,11 +136,75 @@ De manera similar, con esta información:
   
 La tabla que surge de este tipo de trabajo tiene la siguiente estructura:
 
-```{r datos_nokia_2, echo = FALSE}
+```{r datos_sube_2, echo = FALSE}
 
 kable(data.frame( Nombre = c("ID", "Orientación", "Nombre", "Promedio", "Desvío estándar", "Mínimo", "Máximo","Muestra" , "Hora"), Descripción = c("Identificador del tramo", "Orientación definida como 'Sur', 'Norte, 'Este' y 'Oeste'", "Nombre de la calle", "Velocidad promedio del link por hora", "Desvío estándar de la velocidad promedio del link por hora", "Velocidad mínima del link por hora", "Velocidad máxima del link por hora","Cantidad de puntos GPS que se tomaron como muestra", "Hora (variable de agrupación)"))) 
 ```
 
 Este tipo de tabla fue la que utilizamos para realizar el mapa presentado en la primera sección.
   
+## 3- Resultados
 
+A continuación presentamos una serie de resultados obtenidos según lo antes descripto.
+###Avenidas
+
+*Colectivos*
+
+En el siguiente gráfico se ve el promedio de velocidad por avenida en el día.
+
+```{r resultados_sube_agregado, echo = FALSE}
+avenidas <- c("9 DE JULIO AV.","JUSTO, JUAN B. AV.","NAZCA AV.","LA PLATA AV.","DIRECTORIO AV.","MOREAU DE JUSTO, ALICIA AV.","DEL LIBERTADOR AV.")
+
+tbl_agr <- sube_dt[nomoficial %in% avenidas,.(promedio = mean(velocidad_prom) %>% round(.,2)), by = "nomoficial"] %>% arrange(promedio)
+
+kable(tbl_agr,col.names = c("Avenida", "Velocidad Promedio"), align = (c("l", "c")))
+
+ggplot(tbl_agr, aes(x = nomoficial, y = promedio)) + theme_classic() +
+geom_bar(stat="identity", aes(fill = nomoficial), size = 1)  +
+  theme(axis.text.x = element_text(angle=90), panel.grid.major.y = element_line(colour = "slategrey")) + 
+  labs(title="Velocidad promedio ", x= "", y = "Velocidad") + scale_fill_brewer(palette = "Set1") + guides(fill=FALSE)
+```
+
+A continuación, podemos ver la evolución de la velocidad a lo largo del día.
+
+```{r resultados_sube_hora, echo = FALSE}
+avenidas <- c("9 DE JULIO AV.","JUSTO, JUAN B. AV.","NAZCA AV.","LA PLATA AV.","DIRECTORIO AV.","MOREAU DE JUSTO, ALICIA AV.","DEL LIBERTADOR AV.")
+
+tbl_h <- sube_dt[nomoficial %in% avenidas,.(promedio = mean(velocidad_prom) %>% round(.,2), hora = h), by = c("nomoficial","h")] %>% arrange(promedio)
+
+ggplot(tbl_h, aes(x = h, y = promedio)) + theme_classic() +
+geom_line(stat="identity", aes(color = nomoficial), size = 1) +
+  theme(axis.text.x = element_text(angle=0), panel.grid.major.y = element_line(colour = "slategrey"), legend.position = "bottom", legend.title = element_blank()) + 
+  labs(title="Velocidad promedio (km/h)", x= "Hora", y = "Velocidad") + scale_color_brewer(palette = "Set1") + guides(fill=FALSE) + scale_x_continuous(breaks= c(0:23)) 
+
+```
+
+*Autos*
+
+En el siguiente gráfico se ve el promedio de velocidad por avenida en el día.
+
+```{r resultados_here_agregado, echo = FALSE}
+avenidas_here <- c("AVENIDA 9 DE JULIO","AVENIDA JUAN B. JUSTO","AVENIDA NAZCA","AVENIDA LA PLATA","AVENIDA DIRECTORIO","AVENIDA ALICIA MOREAU DE JUSTO","AVENIDA DEL LIBERTADOR")
+
+tbl_agr_here <- here_dt[st_name %in% avenidas_here,.(promedio = mean(vel_prom) %>% round(.,2)), by = "st_name"] %>% arrange(promedio)
+
+kable(tbl_agr_here,col.names = c("Avenida", "Velocidad Promedio"), align = (c("l", "c")))
+
+ggplot(tbl_agr_here, aes(x = st_name, y = promedio)) + theme_classic() +
+geom_bar(stat="identity", aes(fill = st_name), size = 1)  +
+  theme(axis.text.x = element_text(angle=90), panel.grid.major.y = element_line(colour = "slategrey")) +
+  labs(title="Velocidad promedio (km/h)", x= "Avenida", y = "Velocidad") + scale_fill_brewer(palette = "Set1") + guides(fill=FALSE)
+```
+
+A continuación, podemos ver la evolución de la velocidad a lo largo del día.
+
+```{r resultados_here_hora, echo = FALSE}
+
+tbl_h_here <- here_dt[st_name %in% avenidas_here,.(promedio = mean(vel_prom) %>% round(.,2), hora = h), by = c("st_name","h")] %>% arrange(promedio)
+
+ggplot(tbl_h_here, aes(x = h, y = promedio)) + theme_classic() +
+geom_line(stat="identity", aes(color = st_name), size = 1) +
+  theme(axis.text.x = element_text(angle=0), panel.grid.major.y = element_line(colour = "slategrey"), legend.position = "bottom", legend.title = element_blank()) +
+  labs(title="Velocidad promedio (km/h)", x= "Hora", y = "Velocidad") + scale_color_brewer(palette = "Set1") + guides(fill=FALSE) + scale_x_continuous(breaks= c(0:23)) + scale_y_continuous(breaks = c(25, 30, 35, 40, 45))
+
+```
