@@ -67,7 +67,7 @@ dt_1 <- dt_1 %>% filter(is.na(tarjeta_passback) == TRUE)
 #Lista de tarjetas
 tarjetas <- dt_1 %>% distinct(nro_tarjeta)
 n_tarjetas <- nrow(tarjetas)
-tarjetas <- as.list(tarjetas)
+
 #Tarjetas con una sola trx
 tarjeta_1_trx <- (dt_1 %>% group_by(nro_tarjeta) %>% summarise(n = n()) %>% filter(n == 1))$nro_tarjeta
 
