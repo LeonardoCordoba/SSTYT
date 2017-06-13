@@ -1,11 +1,12 @@
 ---
 title: "Informe de Seguimiento BE"
-author: "SSTYTRA:Área de explotación de datos"
-date:
-output: pdf_document
+author: "SSTYT:Área de explotación de datos"
+date: 
+output:
+  pdf_document: default
+  word_document: default
+header-includes: \usepackage{booktabs}
 graphics: yes
-header-includes:
-- \usepackage{booktabs}
 ---
 
 ```{r global_options, R.options=knitr::opts_chunk$set(warning=FALSE, message=FALSE)}
@@ -19,6 +20,7 @@ library("knitr")
 library("xtable")
 library("ggplot2")
 library("cowplot")
+library("scales")
 
 #Conexión al server
 options(sqldf.RPostgreSQL.user ="postgres",
@@ -28,21 +30,44 @@ options(sqldf.RPostgreSQL.user ="postgres",
         sqldf.RPostgreSQL.port =5432)
 
 ```
-```{r extraccion, include=FALSE}
+
+```{r definicion variables, include=FALSE}
 # Genero la variables de mes y año para el informe
 y <- as.numeric(format(Sys.Date(), "%Y"))
-# m <- as.numeric(strftime(as.Date(format(Sys.Date(), "%Y-%m-01")) -1, "%m"))
-m <- as.numeric(strftime(as.Date(format(Sys.Date(), "%Y-%m-01")), "%m"))
+m <- as.numeric(strftime(as.Date(format(Sys.Date(), "%Y-%m-01")) -1, "%m"))
+#m <- as.numeric(strftime(as.Date(format(Sys.Date(), "%Y-%m-01")), "%m"))
 M <- format(Sys.Date()-30, "%B")
 
+#Genero los nombres de las tablas para la liquidación
+
+be_nssa <- "boleto_estudiantil.liquidacion_2017_04"
+elr_mt <- "tablas_complementarias.elr_2017_05"
+be_nssa_marzo <- "boleto_estudiantil.liquidacion_2017_03"
+elr_mt_marzo <- "tablas_complementarias.elr_a2017_04"
+```
+
+```{r extraccion, include=FALSE}
+# Defino funciones para la extracción
+query_be_nssa <- function(tabla, mes, año) {
+    consulta_nssa <- paste("SELECT * FROM", tabla, "WHERE mes_liqui =", mes, "AND ano_liqui =", año)
+    tabla_be <- sqldf(consulta_nssa, drv = "PostgreSQL")
+    return(tabla_be)
+}
+
+query_elr <- function(tabla) {
+    consulta_elr <- paste("SELECT DISTINCT id_empresa, desc_empresa, id_linea, desc_linea FROM", tabla) 
+    tabla_elr <- sqldf(consulta_elr, drv = "PostgreSQL")
+    return(tabla_elr)
+}
+
 # Tomo los datos del mes correspondiente de la base de datos de NSSA
-consulta_nssa <- paste("SELECT * FROM boleto_estudiantil.liquidacion_be_03test WHERE mes_liqui =", m, "AND ano_liqui =", y)
-reporte_be_nssa <- sqldf(consulta_nssa, drv = "PostgreSQL")
+reporte_be_nssa <- query_be_nssa(be_nssa, 4, y)
 
 # Tomo los datos de empresa_linea_ramal actualizados
-elr <- sqldf("SELECT * FROM tablas_complementarias.empresa_linea_ramal", drv = "PostgreSQL")
+elr <- query_elr(elr_mt)
 
-length(unique(reporte_be_nssa$id_linea)) ==  length(unique(elr[elr$id_linea %in% reporte_be_nssa$id_linea,"id_linea"]))
+#Chequeo cantidad de lineas (no es necesario que coincidan)
+#length(unique(reporte_be_nssa$id_linea)) ==  length(unique(elr[elr$id_linea %in% reporte_be_nssa$id_linea,"id_linea"]))
 
 # Genero la tabla reporte enriquecida con los datos de empresa_linea_ramal
 
@@ -50,15 +75,15 @@ reporte_be <- left_join(x = reporte_be_nssa, y = elr, by = "id_linea")
 
 # Genero las tablas base de trabajo: 1 agrupa por empresa, contrato y linea y 2 agrupa por empresa y linea
 
-reporte_be_sum1 <- group_by(reporte_be, id_empresa, desc_empresa, contrato, id_linea, desc_linea) %>% summarise(.,sum(cantidad_usos),sum(total_descuento))
+reporte_be_sum1 <- group_by(reporte_be, id_empresa.x, desc_empresa, contrato, id_linea, desc_linea) %>%     summarise(.,sum(cantidad_usos),sum(total_descuento))
 
-reporte_be_sum2 <- group_by(reporte_be, id_empresa, desc_empresa, id_linea, desc_linea) %>% summarise(.,sum(cantidad_usos),sum(total_descuento))
+reporte_be_sum2 <- group_by(reporte_be, id_empresa.x, desc_empresa, id_linea, desc_linea) %>% summarise(.,sum(cantidad_usos),sum(total_descuento))
 
 # Genero las tablas de usos por modos
 
-usos_bus <-filter(reporte_be_sum2[order(reporte_be_sum2$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa != 1)[,c("desc_linea", "sum(cantidad_usos)")]
+usos_bus <-filter(reporte_be_sum2[order(reporte_be_sum2$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x != 1)[,c("desc_linea", "sum(cantidad_usos)")]
 
-usos_subte <- filter(reporte_be_sum2[order(reporte_be_sum2$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa == 1)[,c("desc_linea","sum(cantidad_usos)")]
+usos_subte <- filter(reporte_be_sum2[order(reporte_be_sum2$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x == 1)[,c("desc_linea","sum(cantidad_usos)")]
 
 # Genero las tablas de usos por nivel educativo
 
@@ -68,13 +93,13 @@ usos_secundaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_us
 
 # Genero las tablas por modo y nivel educativo
 
-usos_bus_primaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa != 1 & contrato == 830 )[,c("desc_linea", "sum(cantidad_usos)")]
+usos_bus_primaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x != 1 & contrato == 830 )[,c("desc_linea", "sum(cantidad_usos)")]
 
-usos_bus_secundaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa != 1 & contrato == 831 )[,c("desc_linea", "sum(cantidad_usos)")]
+usos_bus_secundaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x != 1 & contrato == 831 )[,c("desc_linea", "sum(cantidad_usos)")]
 
-usos_subte_primaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa == 1 & contrato == 830)[,c("desc_linea","sum(cantidad_usos)")]
+usos_subte_primaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x == 1 & contrato == 830)[,c("desc_linea","sum(cantidad_usos)")]
 
-usos_subte_secundaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa == 1 & contrato == 831)[,c("desc_linea","sum(cantidad_usos)")]
+usos_subte_secundaria <- filter(reporte_be_sum1[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x == 1 & contrato == 831)[,c("desc_linea","sum(cantidad_usos)")]
 
 # Calculo los usos totales en general y por nivel educativo
 
@@ -114,12 +139,101 @@ gtop_subte_prim <- ggplot(data = head(usos_subte_primaria), aes(x = desc_linea, 
 
 gtop_subte_secu <- ggplot(data = head(usos_subte_secundaria), aes(x = desc_linea, y = `sum(cantidad_usos)`)) + geom_col(fill =  c("turquoise3", "red", "royalblue3", "darkgreen", "darkorchid4", "gold")) + labs(title = "Subte Secundaria", x = "", y = "Usos")+ theme(axis.text.x = element_text(angle=90, vjust=0.5)) + background_grid(major = "y", minor = 'none') + theme(axis.title.y = element_text(family = "sans", face = "italic", size = 16), axis.text.x = element_text(family = "Palatino", face = "plain", size = 10), axis.text.y = element_text(family = "Palatino", face = "plain"))
 ```
-Durante el mes de `r M` del año `r y` se realizaron `r  total_usos` viajes en el marco del Boleto Estudiantil de la Ciudad Autónoma de Buenos Aires. 
+
+```{r historicos, include=FALSE}
+# Tomo los datos del mes correspondiente de la base de datos de NSSA
+reporte_be_nssa_marzo <- query_be_nssa(be_nssa_marzo, 3, y)
+
+# Tomo los datos de empresa_linea_ramal actualizados
+elr_marzo <- query_elr(elr_mt_marzo)
+
+# Genero la tabla reporte enriquecida con los datos de empresa_linea_ramal
+reporte_be_marzo <- left_join(x = reporte_be_nssa_marzo, y = elr_marzo, by = "id_linea")
+
+# Genero las tablas base de trabajo: 1 agrupa por empresa, contrato y linea y 2 agrupa por empresa y linea
+
+reporte_be_sum1_marzo <- group_by(reporte_be_marzo, id_empresa.x, desc_empresa, contrato, id_linea, desc_linea) %>%     summarise(.,sum(cantidad_usos),sum(total_descuento))
+
+reporte_be_sum2_marzo <- group_by(reporte_be_marzo, id_empresa.x, desc_empresa, id_linea, desc_linea) %>% summarise(.,sum(cantidad_usos),sum(total_descuento))
+
+# Genero las tablas por modo y nivel educativo
+
+usos_bus_primaria_marzo <- filter(reporte_be_sum1_marzo[order(reporte_be_sum1_marzo$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x != 1 & contrato == 830 )[,c("desc_linea", "sum(cantidad_usos)")]
+
+usos_bus_secundaria_marzo <- filter(reporte_be_sum1_marzo[order(reporte_be_sum1_marzo$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x != 1 & contrato == 831 )[,c("desc_linea", "sum(cantidad_usos)")]
+
+usos_subte_primaria_marzo <- filter(reporte_be_sum1_marzo[order(reporte_be_sum1_marzo$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x == 1 & contrato == 830)[,c("desc_linea","sum(cantidad_usos)")]
+
+usos_subte_secundaria_marzo <- filter(reporte_be_sum1_marzo[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x == 1 & contrato == 831)[,c("desc_linea","sum(cantidad_usos)")]
+
+#Numeros de utilidad
+total_marzo <- sum(reporte_be_sum1_marzo$`sum(cantidad_usos)`)
+total_prim_bus_marzo <- sum(usos_bus_primaria_marzo$`sum(cantidad_usos)`)
+total_prim_subte_marzo <- sum(usos_subte_primaria_marzo$`sum(cantidad_usos)`)
+total_secu_bus_marzo <- sum(usos_bus_secundaria_marzo$`sum(cantidad_usos)`)
+total_secu_subte_marzo <- sum(usos_subte_secundaria_marzo$`sum(cantidad_usos)`)
+
+# Genero la tabla de usos por mes
+##Función para calcular la variacion porcentual
+var_porc <- function(t_mas1,t){
+  porc <- (t_mas1 - t)/t * 100
+  porcentaje <- round(porc,2)
+  return(porcentaje)
+}
+# Tabla usos por mes
+tabla_meses <- data.frame(c("Marzo", "Abril"), c(total_marzo,total_usos), c("-",var_porc(total_usos,total_marzo)))
+colnames(tabla_meses) <- c("Mes","Usos", "Variación procentual")
+
+# Gráfico usos totales
+g_usos_meses <- ggplot(tabla_meses, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "forestgreen") + theme(axis.text.x = element_text(angle=0), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Usos totales por mes", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril"))+ scale_y_continuous(breaks =c(500000, 750000,1000000))
+
+# Tabla usos por mes: primaria-bus
+tabla_meses_prim_bus <- data.frame(c("Marzo", "Abril"), c(total_prim_bus_marzo,sum(usos_bus_primaria$`sum(cantidad_usos)`)),c("-",var_porc(sum(usos_bus_primaria$`sum(cantidad_usos)`),total_prim_bus_marzo)))
+colnames(tabla_meses_prim_bus) <- c("Mes","Usos", "Variación procentual")
+
+kabla_meses_prim_bus <- kable(tabla_meses_prim_bus, format = "latex", booktabs = TRUE, align = 'lrr')
+
+# Tabla usos por mes:primaria-subte
+tabla_meses_prim_subte <- data.frame(c("Marzo", "Abril"), c(total_prim_subte_marzo,sum(usos_subte_primaria$`sum(cantidad_usos)`)),c("-",var_porc(sum(usos_subte_primaria$`sum(cantidad_usos)`),total_prim_subte_marzo)))
+colnames(tabla_meses_prim_subte) <- c("Mes","Usos", "Variación procentual")
+
+kabla_meses_prim_subte <- kable(tabla_meses_prim_subte, format = "latex", booktabs = TRUE, align = 'lrr')
+
+# Tabla usos por mes:secundaria-bus
+tabla_meses_secu_bus <- data.frame(c("Marzo", "Abril"), c(total_secu_bus_marzo,sum(usos_bus_secundaria$`sum(cantidad_usos)`)),c("-",var_porc(sum(usos_bus_secundaria$`sum(cantidad_usos)`),total_secu_bus_marzo)))
+colnames(tabla_meses_secu_bus) <- c("Mes","Usos", "Variación procentual")
+
+kabla_meses_secu_bus <- kable(tabla_meses_secu_bus, format = "latex", booktabs = TRUE, align = 'lrr')
+
+# Tabla usos por mes:secundaria-subte
+tabla_meses_secu_subte <- data.frame(c("Marzo", "Abril"), c(total_secu_subte_marzo,sum(usos_subte_secundaria$`sum(cantidad_usos)`)),c("-",var_porc(sum(usos_subte_secundaria$`sum(cantidad_usos)`),total_secu_subte_marzo)))
+colnames(tabla_meses_secu_subte) <- c("Mes","Usos", "Variación procentual")
+
+kabla_meses_secu_subte <- kable(tabla_meses_secu_subte, format = "latex", booktabs = TRUE, align = 'lrr')
+
+# Gráfico usos por mes: primaria-bus
+g_usos_meses_prim_bus <- ggplot(tabla_meses_prim_bus, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "firebrick") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Colectivo Primaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril"))+ scale_y_continuous(breaks =c(60000,90000,120000))
+
+# Gráfico usos por mes: primaria-subte
+g_usos_meses_prim_subte <- ggplot(tabla_meses_prim_subte, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "steelblue") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Subte Primaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril"))+ scale_y_continuous(breaks =c(20000,30000,40000))
+
+# Gráfico usos por mes: secundaria-bus
+g_usos_meses_secu_bus <- ggplot(tabla_meses_secu_bus, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "firebrick") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Colectivo Secundaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril"))+ scale_y_continuous(breaks =c(300000,600000, 900000), limits = c(300000,900000), labels = c("300000","600000","900000"))
+
+# Gráfico usos por mes: secundaria-subte
+g_usos_meses_secu_subte <- ggplot(tabla_meses_secu_subte, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "steelblue") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Subte Secundaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril"))+ scale_y_continuous(breaks =c(60000,90000,120000))
+```
+
+# Análisis agregado
+
+Durante el mes de `r M` del año `r y` se realizaron `r  total_usos` usos en el marco del Boleto Estudiantil de la Ciudad Autónoma de Buenos Aires. 
 
 ```{r tabla_gral, echo=FALSE} 
 #Tabla con total de usos por modo de transporte
 
 kable(data.frame(sum(usos_bus$`sum(cantidad_usos)`), sum(usos_subte$`sum(cantidad_usos)`), row.names = ("Usos")), caption = "Usos por modo de transporte", col.name = c("Colectivo", "Subte"))
+
+kable(data.frame(round(sum(usos_bus$`sum(cantidad_usos)`)/total_usos *100, 2), round(sum(usos_subte$`sum(cantidad_usos)`)/total_usos *100, 2), row.names = ("Usos")), caption = "Usos por modo de transporte (porcentaje)", col.name = c("Colectivo", "Subte"))
 
 ```
 
@@ -154,6 +268,8 @@ A continuación se presenta en gráficos la información de las tablas 2 y 3
 plot_grid(gtop_bus, gtop_subte, ncol = 2, align = "h")
 ```
 
+# Análisis desagregado
+
 Diferenciando por nivel educativo se tiene que los estudiantes de primaria realizaron `r total_primaria` usos y los estudiantes de nivel secundario (exceptuando a aquellos que asisten a los CFP) realizaron `r total_secundaria`. En la tabla 4 se presentan los usos discriminados por modos y niveles educativos.
 
 ```{r tabla_nivel_modo, echo=FALSE}
@@ -165,6 +281,13 @@ kable(data.frame(Primaria = c(sum(usos_bus_primaria$`sum(cantidad_usos)`),
                                sum(usos_secundaria$`sum(cantidad_usos)`)),
                 Total = c(sum(usos_bus$`sum(cantidad_usos)`), sum(usos_subte$`sum(cantidad_usos)`), sum(reporte_be_sum1$`sum(cantidad_usos)`)),
                 row.names = c("Colectivo", "Subte", "Total")), caption = "Usos por modo y nivel educativo")
+
+kable(data.frame(Primaria = c(round(sum(usos_bus_primaria$`sum(cantidad_usos)`)/ total_usos * 100, 2),
+                              round(sum(usos_subte_primaria$`sum(cantidad_usos)`)/total_usos * 100, 2), round(sum(usos_primaria$`sum(cantidad_usos)`)/total_usos * 100, 2)),
+                Secundaria = c(round(sum(usos_bus_secundaria$`sum(cantidad_usos)`)/total_usos * 100, 2), round(sum(usos_subte_secundaria$`sum(cantidad_usos)`)/ total_usos * 100, 2),
+                               round(sum(usos_secundaria$`sum(cantidad_usos)`)/ total_usos * 100, 2)),
+                Total = c(round(sum(usos_bus$`sum(cantidad_usos)`) / total_usos * 100, 2), round(sum(usos_subte$`sum(cantidad_usos)`)/total_usos * 100, 2), round(sum(reporte_be_sum1$`sum(cantidad_usos)`)/total_usos *100, 2)),
+                row.names = c("Colectivo", "Subte", "Total")), caption = "Usos por modo y nivel educativo")
 ```
 
 En las tablas 5 y 6 se presenta el detalle de los usos de las líneas de colectivos más utilizadas por cada nivel educativo. En las tablas 7 y 8 se presentan los usos en las líneas de subterráneo separado por cada nivel educativo.
@@ -172,44 +295,91 @@ En las tablas 5 y 6 se presenta el detalle de los usos de las líneas de colecti
 ```{r tabla_top_nivel_modo, echo=FALSE, results='asis'}
 
 # Tablas con tablas de 10 lineas más usadas de colectivos y los usos por línea de subte
-
 cat(c("\\begin{table}[!htb]
     \\begin{minipage}{.5\\linewidth}
-      \\caption{Líneas de colectivo de mayor uso: Primaria}
+      \\caption{Colectivos Primaria}
       \\centering
       \\vspace{3mm}",
         top_usos_bus_prim,
     "\\end{minipage}%
     \\begin{minipage}{.5\\linewidth}
       \\centering
-        \\caption{Líneas de colectivo de mayor uso: Secundaria}
+        \\caption{Colectivos Secundaria}
         \\vspace{3mm}",
         top_usos_bus_secu,
     "\\end{minipage}%
 
     \\begin{minipage}{.5\\linewidth}
-      \\caption{Usos líneas de subte: Primaria}
+      \\caption{Subte Primaria}
       \\centering
       \\vspace{3mm}",
         top_usos_subte_prim,
     "\\end{minipage}%
     \\begin{minipage}{.5\\linewidth}
       \\centering
-        \\caption{Usos líneas de subte: Secundaria}
+        \\caption{Subte Secundaria}
         \\vspace{3mm}",
         top_usos_subte_secu,
     "\\end{minipage} 
 \\end{table}"
 )) 
+
 ```
 
 A continuación, se presentan los datos de las tablas 5 a 8 en gráficos. 
 
 ```{r graficos_top_nivel_modo, echo = FALSE}
-
-
 # Gráficos de las 10 líneas más usadas de colectivos y los usos por línea de subte discriminado por nivel educativo
 
 plot_grid(gtop_bus_prim, gtop_bus_secu, gtop_subte_prim, gtop_subte_secu, ncol = 2)
 ```
 
+# Analisis histórico
+
+Para la evaluar la evolución del proyecto en el tiempo en la tabla 11 se presentan los datos de usos totales y su variación porcentual entre los distintos meses. La misma información se presenta en el gráfico siguiente.
+
+```{r historico agregado, echo=FALSE}
+kable(tabla_meses, align = "lrr", caption = "Usos totales por mes")
+
+g_usos_meses
+```
+
+También interesa observar la evolución en el tiempo discriminando por nivel educativo y modo de transporte. En las tablas 12 a 16 se observa el número absoluto de usos por mes y la variación porcentual entre ellos.
+
+```{r historico desagregado, echo=FALSE, results='asis'}
+
+cat(c("\\begin{table}[!htb]
+    \\begin{minipage}{.5\\linewidth}
+      \\caption{Colectivos Primaria}
+      \\centering
+      \\vspace{3mm}",
+        kabla_meses_prim_bus,
+    "\\end{minipage}%
+    \\begin{minipage}{.5\\linewidth}
+      \\centering
+        \\caption{Colectivos Secundaria}
+        \\vspace{3mm}",
+        kabla_meses_secu_bus,
+    "\\end{minipage}%
+
+    \\begin{minipage}{.5\\linewidth}
+      \\caption{Subte Primaria}
+      \\centering
+      \\vspace{3mm}",
+        kabla_meses_prim_subte,
+    "\\end{minipage}%
+    \\begin{minipage}{.5\\linewidth}
+      \\centering
+        \\caption{Subte Secundaria}
+        \\vspace{3mm}",
+        kabla_meses_secu_subte,
+    "\\end{minipage} 
+\\end{table}"
+)) 
+```
+
+En los siguientes gráficos se observan los usos totales de cada una de la tablas anteriores (se debe considerar que la escala de los ejes verticales no es la misma)
+
+```{r graficos historico desagregado, echo=FALSE}
+plot_grid(g_usos_meses_prim_bus, g_usos_meses_secu_bus, g_usos_meses_prim_subte, g_usos_meses_secu_subte, ncol = 2)
+```
