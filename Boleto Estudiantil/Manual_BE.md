@@ -5,6 +5,7 @@ Los datos se encuentran en una plataforma del Ministerio de Transporte de Nació
 El acceso se hace por: https://is.transporte.gob.ar/panel
 
 En esta plataforma están los siguientes archivos:
+
   * Los usos del mes por Boleto Estudiantil
   * Los rezagos del mes por Boleto Estudiantil
   * La tabla de empresa-línea-ramal actualizada
@@ -138,12 +139,14 @@ Educación es quien ejecuta el presupuesto para el envío de los fondos a las em
 Hay que enviar por nota oficial los archivos de liquidación en formato PDF y csv.
 
 El envío mensual por colectivos consiste en:
+
   * Liquidación usos del mes (pdf)
   * Liquidación usos del mes (csv)
   * Liquidación rezagos del mes (pdf)
   * Liquidación rezagos del mes (csv)
   
 Para el envío por SBASE falta que se asiente cuál es la periodicidad del envío. El mismo consistirá:
+
   * Liquidación usos del período (pdf)
   * Liquidación usos del período (csv)
   
