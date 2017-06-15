@@ -17,40 +17,63 @@ options(sqldf.RPostgreSQL.user ="postgres",
         sqldf.RPostgreSQL.dbname ="sube",
         sqldf.RPostgreSQL.host = "10.78.14.54",
         sqldf.RPostgreSQL.port =5432)
-
 ```
-```{r extraccion, include=FALSE}
+```{r definicion variables, include=FALSE}
 # Genero la variables de mes y año para el informe
 y <- as.numeric(format(Sys.Date(), "%Y"))
-# m <- as.numeric(strftime(as.Date(format(Sys.Date(), "%Y-%m-01")) -1, "%m"))
-m <- as.numeric(strftime(as.Date(format(Sys.Date(), "%Y-%m-01")), "%m"))
+m <- as.numeric(strftime(as.Date(format(Sys.Date(), "%Y-%m-01")) -1, "%m"))
+#m <- as.numeric(strftime(as.Date(format(Sys.Date(), "%Y-%m-01")), "%m"))
 M <- format(Sys.Date()-30, "%B")
 
+#Genero los nombres de las tablas para la liquidación
+
+be_nssa <- "boleto_estudiantil.liquidacion_2017_04"
+elr <- "tablas_complementarias.elr_2017_05"
+```
+
+```{r extraccion, include=FALSE}
 # Tomo los datos del mes correspondiente de la base de datos de NSSA
-consulta_nssa <- paste("SELECT * FROM boleto_estudiantil.liquidacion_be_03test WHERE mes_liqui =", m, "AND ano_liqui =", y)
+consulta_nssa <- paste("SELECT * FROM", be_nssa, "WHERE mes_liqui =", m, "AND ano_liqui =", y)
 reporte_be_nssa <- sqldf(consulta_nssa, drv = "PostgreSQL")
 
 # Tomo los datos de empresa_linea_ramal actualizados
-elr <- sqldf("SELECT * FROM tablas_complementarias.empresa_linea_ramal", drv = "PostgreSQL")
+consulta_elr <- paste("SELECT DISTINCT id_empresa, desc_empresa, id_linea, desc_linea FROM", elr) 
+elr <- sqldf(consulta_elr, drv = "PostgreSQL")
 
-length(unique(reporte_be_nssa$id_linea)) ==  length(unique(elr[elr$id_linea %in% reporte_be_nssa$id_linea,"id_linea"]))
-
-# Creo la tabla reporte enriquecida con los datos de empresa_linea_ramal
-
-reporte_be <- left_join(x = reporte_be_nssa, y = elr, by = "id_linea")
+#Chequeo cantidad de lineas (no es necesario que coincidan)
+#length(unique(reporte_be_nssa$id_linea)) ==  length(unique(elr[elr$id_linea %in% reporte_be_nssa$id_linea,"id_linea"]))
 
 # Genero la tabla base de trabajo, agrupa por empresa y linea y suma la cantidad de usos y el monto a transferir
 
-reporte_be_sum <- group_by(reporte_be, id_empresa, desc_empresa, id_linea, desc_linea) %>% summarise(.,sum(cantidad_usos),sum(total_descuento))
+reporte_be_sum<- group_by(reporte_be_nssa, id_empresa, id_linea) %>% summarise(.,sum(cantidad_usos),sum(total_descuento))
 
-# Filtro para generar una tabla que presente sólo los datos de colectivos
+# Creo la tabla reporte enriquecida con los datos de empresa_linea_ramal
 
-reporte_be_bus1 <- filter(reporte_be_sum, id_empresa != 1)   
+reporte_be <- left_join(x = reporte_be_sum, y = elr, by = "id_linea")
 
-reporte_be_bus <- reporte_be_bus1[ , -c(grep("id_empresa", colnames(reporte_be_bus1)), grep("id_linea", colnames(reporte_be_bus1)), grep("sum\\(cantidad_usos\\)", colnames(reporte_be_bus1)))]
+# Filtro para generar una tabla que presente sólo los datos de colectivos (el id_empresa =1 pertenece a subtes)
+names(reporte_be)[1] <- "id_empresa_x"
+reporte_be_bus1 <- reporte_be[reporte_be$id_empresa_x!= 1,]  
+reporte_be_bus <- reporte_be_bus1[,-c(
+                                      grep("id_empresa", colnames(reporte_be_bus1)),
+                                      grep("id_linea", colnames(reporte_be_bus1)),
+                                      grep("sum\\(cantidad_usos\\)", colnames(reporte_be_bus1))
+                                      )]
+
+reporte_be_bus <- reporte_be_bus[, c(2,3,1)]
+reporte_be_bus_csv <- reporte_be_bus
+names(reporte_be_bus_csv)[1:3] <- c("Empresa", "Línea", "Monto")
+
+monto_total <- paste( "$", as.character(sum(reporte_be_bus$`sum(total_descuento)`)), sep =" ") 
+
+write.csv(reporte_be_bus_csv, file = "liquidacion_bus_2017_04.csv", row.names = FALSE, col.names = FALSE)
 
 ```
-El presente reporte corresponde a liquidación a empresas de colectivo en concepto del boleto estudiantil durante el mes de `r M` del año `r y`. En el siguiente cuadro se presenta el detalle de la asignación de montos.
+El presente reporte corresponde a liquidación a empresas de colectivo en concepto del boleto estudiantil durante el mes de `r M` del año `r y` correspondiente a los rezagos del mes de marzo.
+
+El monto total que se debe transferir por dicho mes es de `r monto_total`
+
+En el siguiente cuadro se presenta el detalle de la asignación de montos por empresa y línea:
 
 
 ```{r a, echo= FALSE} 

@@ -5,13 +5,14 @@ Los datos se encuentran en una plataforma del Ministerio de Transporte de Nació
 El acceso se hace por: https://is.transporte.gob.ar/panel
 
 En esta plataforma están los siguientes archivos:
+
   * Los usos del mes por Boleto Estudiantil
   * Los rezagos del mes por Boleto Estudiantil
   * La tabla de empresa-línea-ramal actualizada
   
 Recomendamos leer brevemente los archivos en un bloc de notas (gedit) para chequear que no haya filas en blanco (suele haberlas y esto impide la ejecución de los scripts)
 
-## Creación tabla mensual
+## Creación tabla mensual de usos
 ### Creación de la tabla mensual (PostgreSQL)
 
 CREATE TABLE boleto_estudiantil.liquidacion_año_mes(
@@ -77,11 +78,43 @@ COPY boleto_estudiantil.liquidacion_año_mes_rezagos FROM '/home/innovacion/nomb
 ALTER TABLE boleto_estudiantil.liquidacion_año_mes_rezagos ADD COLUMN mes_liqui integer
 
 UPDATE boleto_estudiantil.liquidacion_año_mes_rezagos SET mes_liqui = mm WHERE periodo = 'mmyyyy'
-Creación columna año de liquidación (Postgres)
 
 ALTER TABLE boleto_estudiantil.liquidacion_año_mes_rezagos ADD COLUMN ano_liqui integer
 
 UPDATE boleto_estudiantil.liquidacion_año_mes_rezagos SET ano_liqui = yyyy WHERE periodo = 'mmyyyy'
+
+## Creación tabla mensual de empresa-linea-ramal (ELR)
+
+### Creación de la tabla ELR (Postgres)
+CREATE TABLE tablas_complementarias.elr_año_mes (
+id_empresa integer,
+desc_empresa character varying,
+cuit bigint,
+id_linea integer,
+desc_linea character varying,
+id_ramal integer,
+ramal_corto character varying,
+desc_ramal character varying)
+ 
+### Carga al server de la base de datos de los rezagos (terminal)
+sudo scp file_path/nombre_archivo.csv innovacion@10.78.14.54:/home/innovacion
+ 
+### Carga de datos a la tabla (Postgres) 
+COPY tablas_complementarias.elr_año_mes FROM '/home/innovacion/nombre_archivo.csv' DELIMITER ';' CSV HEADER;
+ 
+### Modificaciones a la tabla
+-- Creación de la columna modo
+ALTER TABLE tablas_complementarias.elr_2017_05
+ADD COLUMN modo varchar(100);
+ 
+-- Seteo BUS en la columna modo
+UPDATE tablas_complementarias.elr_2017_05
+SET modo = 'BUS'
+WHERE id_empresa <> 1
+ 
+-- Agrega las filas correspondientes a subte (no vienen en el archivo original)
+INSERT INTO tablas_complementarias.elr_2017_mes-actual
+SELECT * FROM tablas_complementarias.elr_a2017_mes-pasado where id_empresa = 1
 
 ## Ejecución de los scripts de liquidación de R
 
@@ -106,12 +139,14 @@ Educación es quien ejecuta el presupuesto para el envío de los fondos a las em
 Hay que enviar por nota oficial los archivos de liquidación en formato PDF y csv.
 
 El envío mensual por colectivos consiste en:
+
   * Liquidación usos del mes (pdf)
   * Liquidación usos del mes (csv)
   * Liquidación rezagos del mes (pdf)
   * Liquidación rezagos del mes (csv)
   
 Para el envío por SBASE falta que se asiente cuál es la periodicidad del envío. El mismo consistirá:
+
   * Liquidación usos del período (pdf)
   * Liquidación usos del período (csv)
   
