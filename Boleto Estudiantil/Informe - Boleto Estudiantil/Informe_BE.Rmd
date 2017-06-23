@@ -40,10 +40,13 @@ M <- format(Sys.Date()-30, "%B")
 
 #Genero los nombres de las tablas para la liquidación
 
-be_nssa <- "boleto_estudiantil.liquidacion_2017_04"
-elr_mt <- "tablas_complementarias.elr_2017_05"
+be_nssa <- "boleto_estudiantil.liquidacion_2017_05"
+elr_mt <- "tablas_complementarias.elr_2017_06"
 be_nssa_marzo <- "boleto_estudiantil.liquidacion_2017_03"
 elr_mt_marzo <- "tablas_complementarias.elr_a2017_04"
+be_nssa_abril <- "boleto_estudiantil.liquidacion_2017_04"
+elr_mt_abril <- "tablas_complementarias.elr_2017_05"
+
 ```
 
 ```{r extraccion, include=FALSE}
@@ -61,7 +64,7 @@ query_elr <- function(tabla) {
 }
 
 # Tomo los datos del mes correspondiente de la base de datos de NSSA
-reporte_be_nssa <- query_be_nssa(be_nssa, 4, y)
+reporte_be_nssa <- query_be_nssa(be_nssa, 5, y)
 
 # Tomo los datos de empresa_linea_ramal actualizados
 elr <- query_elr(elr_mt)
@@ -143,18 +146,25 @@ gtop_subte_secu <- ggplot(data = head(usos_subte_secundaria), aes(x = desc_linea
 ```{r historicos, include=FALSE}
 # Tomo los datos del mes correspondiente de la base de datos de NSSA
 reporte_be_nssa_marzo <- query_be_nssa(be_nssa_marzo, 3, y)
+reporte_be_nssa_abril <- query_be_nssa(be_nssa_abril, 4, y)
 
 # Tomo los datos de empresa_linea_ramal actualizados
 elr_marzo <- query_elr(elr_mt_marzo)
+elr_abril <- query_elr(elr_mt_abril)
 
 # Genero la tabla reporte enriquecida con los datos de empresa_linea_ramal
 reporte_be_marzo <- left_join(x = reporte_be_nssa_marzo, y = elr_marzo, by = "id_linea")
+reporte_be_abril <- left_join(x = reporte_be_nssa_abril, y = elr_abril, by = "id_linea")
 
 # Genero las tablas base de trabajo: 1 agrupa por empresa, contrato y linea y 2 agrupa por empresa y linea
 
 reporte_be_sum1_marzo <- group_by(reporte_be_marzo, id_empresa.x, desc_empresa, contrato, id_linea, desc_linea) %>%     summarise(.,sum(cantidad_usos),sum(total_descuento))
 
 reporte_be_sum2_marzo <- group_by(reporte_be_marzo, id_empresa.x, desc_empresa, id_linea, desc_linea) %>% summarise(.,sum(cantidad_usos),sum(total_descuento))
+
+reporte_be_sum1_abril <- group_by(reporte_be_abril, id_empresa.x, desc_empresa, contrato, id_linea, desc_linea) %>%     summarise(.,sum(cantidad_usos),sum(total_descuento))
+
+reporte_be_sum2_abril <- group_by(reporte_be_abril, id_empresa.x, desc_empresa, id_linea, desc_linea) %>% summarise(.,sum(cantidad_usos),sum(total_descuento))
 
 # Genero las tablas por modo y nivel educativo
 
@@ -164,14 +174,27 @@ usos_bus_secundaria_marzo <- filter(reporte_be_sum1_marzo[order(reporte_be_sum1_
 
 usos_subte_primaria_marzo <- filter(reporte_be_sum1_marzo[order(reporte_be_sum1_marzo$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x == 1 & contrato == 830)[,c("desc_linea","sum(cantidad_usos)")]
 
-usos_subte_secundaria_marzo <- filter(reporte_be_sum1_marzo[order(reporte_be_sum1$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x == 1 & contrato == 831)[,c("desc_linea","sum(cantidad_usos)")]
+usos_subte_secundaria_marzo <- filter(reporte_be_sum1_marzo[order(reporte_be_sum1_marzo$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x == 1 & contrato == 831)[,c("desc_linea","sum(cantidad_usos)")]
 
+usos_bus_primaria_abril <- filter(reporte_be_sum1_abril[order(reporte_be_sum1_abril$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x != 1 & contrato == 830 )[,c("desc_linea", "sum(cantidad_usos)")]
+
+usos_bus_secundaria_abril <- filter(reporte_be_sum1_abril[order(reporte_be_sum1_abril$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x != 1 & contrato == 831 )[,c("desc_linea", "sum(cantidad_usos)")]
+
+usos_subte_primaria_abril <- filter(reporte_be_sum1_abril[order(reporte_be_sum1_abril$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x == 1 & contrato == 830)[,c("desc_linea","sum(cantidad_usos)")]
+
+usos_subte_secundaria_abril <- filter(reporte_be_sum1_abril[order(reporte_be_sum1_abril$`sum(cantidad_usos)`, decreasing = TRUE),], id_empresa.x == 1 & contrato == 831)[,c("desc_linea","sum(cantidad_usos)")]
 #Numeros de utilidad
 total_marzo <- sum(reporte_be_sum1_marzo$`sum(cantidad_usos)`)
 total_prim_bus_marzo <- sum(usos_bus_primaria_marzo$`sum(cantidad_usos)`)
 total_prim_subte_marzo <- sum(usos_subte_primaria_marzo$`sum(cantidad_usos)`)
 total_secu_bus_marzo <- sum(usos_bus_secundaria_marzo$`sum(cantidad_usos)`)
 total_secu_subte_marzo <- sum(usos_subte_secundaria_marzo$`sum(cantidad_usos)`)
+
+total_abril <- sum(reporte_be_sum1_abril$`sum(cantidad_usos)`)
+total_prim_bus_abril <- sum(usos_bus_primaria_abril$`sum(cantidad_usos)`)
+total_prim_subte_abril <- sum(usos_subte_primaria_abril$`sum(cantidad_usos)`)
+total_secu_bus_abril <- sum(usos_bus_secundaria_abril$`sum(cantidad_usos)`)
+total_secu_subte_abril <- sum(usos_subte_secundaria_abril$`sum(cantidad_usos)`)
 
 # Genero la tabla de usos por mes
 ##Función para calcular la variacion porcentual
@@ -181,47 +204,47 @@ var_porc <- function(t_mas1,t){
   return(porcentaje)
 }
 # Tabla usos por mes
-tabla_meses <- data.frame(c("Marzo", "Abril"), c(total_marzo,total_usos), c("-",var_porc(total_usos,total_marzo)))
+tabla_meses <- data.frame(c("Marzo", "Abril", "Mayo"), c(total_marzo, total_abril,total_usos), c("-",var_porc(total_abril,total_marzo), var_porc(total_usos,total_abril)))
 colnames(tabla_meses) <- c("Mes","Usos", "Variación procentual")
 
 # Gráfico usos totales
-g_usos_meses <- ggplot(tabla_meses, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "forestgreen") + theme(axis.text.x = element_text(angle=0), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Usos totales por mes", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril"))+ scale_y_continuous(breaks =c(500000, 750000,1000000))
+g_usos_meses <- ggplot(tabla_meses, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "forestgreen") + theme(axis.text.x = element_text(angle=0), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Usos totales por mes", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril","Mayo"))+ scale_y_continuous(breaks =c(500000,1000000,1500000,2000000))
 
 # Tabla usos por mes: primaria-bus
-tabla_meses_prim_bus <- data.frame(c("Marzo", "Abril"), c(total_prim_bus_marzo,sum(usos_bus_primaria$`sum(cantidad_usos)`)),c("-",var_porc(sum(usos_bus_primaria$`sum(cantidad_usos)`),total_prim_bus_marzo)))
+tabla_meses_prim_bus <- data.frame(c("Marzo", "Abril", "Mayo"), c(total_prim_bus_marzo, total_prim_bus_abril,sum(usos_bus_primaria$`sum(cantidad_usos)`)), c("-",var_porc(total_prim_bus_abril,total_prim_bus_marzo), var_porc(sum(usos_bus_primaria$`sum(cantidad_usos)`), total_prim_bus_abril)))
 colnames(tabla_meses_prim_bus) <- c("Mes","Usos", "Variación procentual")
 
 kabla_meses_prim_bus <- kable(tabla_meses_prim_bus, format = "latex", booktabs = TRUE, align = 'lrr')
 
 # Tabla usos por mes:primaria-subte
-tabla_meses_prim_subte <- data.frame(c("Marzo", "Abril"), c(total_prim_subte_marzo,sum(usos_subte_primaria$`sum(cantidad_usos)`)),c("-",var_porc(sum(usos_subte_primaria$`sum(cantidad_usos)`),total_prim_subte_marzo)))
+tabla_meses_prim_subte <- data.frame(c("Marzo", "Abril", "Mayo"), c(total_prim_subte_marzo,total_prim_subte_abril,sum(usos_subte_primaria$`sum(cantidad_usos)`)),c("-", var_porc(total_prim_subte_abril,total_prim_subte_marzo),var_porc(sum(usos_subte_primaria$`sum(cantidad_usos)`),total_prim_subte_abril)))
 colnames(tabla_meses_prim_subte) <- c("Mes","Usos", "Variación procentual")
 
 kabla_meses_prim_subte <- kable(tabla_meses_prim_subte, format = "latex", booktabs = TRUE, align = 'lrr')
 
 # Tabla usos por mes:secundaria-bus
-tabla_meses_secu_bus <- data.frame(c("Marzo", "Abril"), c(total_secu_bus_marzo,sum(usos_bus_secundaria$`sum(cantidad_usos)`)),c("-",var_porc(sum(usos_bus_secundaria$`sum(cantidad_usos)`),total_secu_bus_marzo)))
+tabla_meses_secu_bus <- data.frame(c("Marzo", "Abril", "Mayo"), c(total_secu_bus_marzo, total_secu_bus_abril,sum(usos_bus_secundaria$`sum(cantidad_usos)`)),c("-", var_porc(total_secu_bus_abril,total_secu_bus_marzo),var_porc(sum(usos_bus_secundaria$`sum(cantidad_usos)`),total_secu_bus_abril)))
 colnames(tabla_meses_secu_bus) <- c("Mes","Usos", "Variación procentual")
 
 kabla_meses_secu_bus <- kable(tabla_meses_secu_bus, format = "latex", booktabs = TRUE, align = 'lrr')
 
 # Tabla usos por mes:secundaria-subte
-tabla_meses_secu_subte <- data.frame(c("Marzo", "Abril"), c(total_secu_subte_marzo,sum(usos_subte_secundaria$`sum(cantidad_usos)`)),c("-",var_porc(sum(usos_subte_secundaria$`sum(cantidad_usos)`),total_secu_subte_marzo)))
+tabla_meses_secu_subte <- data.frame(c("Marzo", "Abril", "Mayo"), c(total_secu_subte_marzo,total_secu_subte_abril,sum(usos_subte_secundaria$`sum(cantidad_usos)`)),c("-",var_porc(total_secu_subte_abril,total_secu_subte_marzo),var_porc(sum(usos_subte_secundaria$`sum(cantidad_usos)`),total_secu_subte_abril)))
 colnames(tabla_meses_secu_subte) <- c("Mes","Usos", "Variación procentual")
 
 kabla_meses_secu_subte <- kable(tabla_meses_secu_subte, format = "latex", booktabs = TRUE, align = 'lrr')
 
 # Gráfico usos por mes: primaria-bus
-g_usos_meses_prim_bus <- ggplot(tabla_meses_prim_bus, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "firebrick") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Colectivo Primaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril"))+ scale_y_continuous(breaks =c(60000,90000,120000))
+g_usos_meses_prim_bus <- ggplot(tabla_meses_prim_bus, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "firebrick") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Colectivo Primaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril","Mayo"))+ scale_y_continuous(breaks =c(60000,120000,180000))
 
 # Gráfico usos por mes: primaria-subte
-g_usos_meses_prim_subte <- ggplot(tabla_meses_prim_subte, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "steelblue") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Subte Primaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril"))+ scale_y_continuous(breaks =c(20000,30000,40000))
+g_usos_meses_prim_subte <- ggplot(tabla_meses_prim_subte, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "steelblue") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Subte Primaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril","Mayo"))+ scale_y_continuous(breaks =c(20000,40000,60000))
 
 # Gráfico usos por mes: secundaria-bus
-g_usos_meses_secu_bus <- ggplot(tabla_meses_secu_bus, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "firebrick") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Colectivo Secundaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril"))+ scale_y_continuous(breaks =c(300000,600000, 900000), limits = c(300000,900000), labels = c("300000","600000","900000"))
+g_usos_meses_secu_bus <- ggplot(tabla_meses_secu_bus, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "firebrick") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Colectivo Secundaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril","Mayo"))+ scale_y_continuous(breaks =c(300000,900000, 1500000), limits = c(300000,1500000))
 
 # Gráfico usos por mes: secundaria-subte
-g_usos_meses_secu_subte <- ggplot(tabla_meses_secu_subte, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "steelblue") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Subte Secundaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril"))+ scale_y_continuous(breaks =c(60000,90000,120000))
+g_usos_meses_secu_subte <- ggplot(tabla_meses_secu_subte, aes(x = Mes, y = Usos, group=1)) + geom_line(size = 1.5, colour = "steelblue") + theme(axis.text.x = element_text(angle=0), axis.text.y = element_text(angle=45, size=10), panel.grid.major.x = element_line(colour = "grey70", linetype = "dotted"), panel.grid.major.y = element_line(colour = "slategray", linetype = "solid")) + labs(title="Subte Secundaria", x= "", y = "") +scale_x_discrete(limits=c("Marzo","Abril","Mayo"))+ scale_y_continuous(breaks =c(60000,130000,200000), labels = c("60000","130000","200000"))
 ```
 
 # Análisis agregado
